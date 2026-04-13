@@ -1,34 +1,45 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import type { Shift, Period } from "@/lib/types";
+import type { Shift, Period, Role } from "@/lib/types";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const PERIODS: Period[] = ["morning", "afternoon", "evening"];
-const PERIOD_LABELS: Record<Period, string> = {
-  morning: "Morning",
-  afternoon: "Afternoon",
-  evening: "Evening",
+
+const PERIOD_CONFIG: Record<Period, { label: string; icon: string; time: string }> = {
+  morning: { label: "Morning", icon: "AM", time: "6am - 12pm" },
+  afternoon: { label: "Afternoon", icon: "PM", time: "12pm - 6pm" },
+  evening: { label: "Evening", icon: "NT", time: "6pm - 12am" },
 };
 
-const ROLE_COLORS: Record<string, string> = {
-  manager: "bg-purple-100 text-purple-800 border-purple-200",
-  cook: "bg-orange-100 text-orange-800 border-orange-200",
-  waiter: "bg-blue-100 text-blue-800 border-blue-200",
-  dishwasher: "bg-green-100 text-green-800 border-green-200",
+const ROLE_CONFIG: Record<Role, { label: string; color: string; dot: string }> = {
+  manager: { label: "MGR", color: "bg-violet-50 text-violet-700 ring-violet-200", dot: "bg-violet-500" },
+  cook: { label: "COOK", color: "bg-amber-50 text-amber-700 ring-amber-200", dot: "bg-amber-500" },
+  waiter: { label: "WAIT", color: "bg-sky-50 text-sky-700 ring-sky-200", dot: "bg-sky-500" },
+  dishwasher: { label: "DISH", color: "bg-emerald-50 text-emerald-700 ring-emerald-200", dot: "bg-emerald-500" },
 };
 
-function getDayLabels(startDate: string): { date: string; label: string }[] {
-  const days: { date: string; label: string }[] = [];
+function getDays(startDate: string) {
+  const days: { date: string; dayName: string; dayNum: number; month: string; isToday: boolean }[] = [];
+  const today = new Date().toISOString().split("T")[0];
   const start = new Date(startDate + "T00:00:00");
-  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const dateStr = d.toISOString().split("T")[0];
-    const dayNum = d.getDate();
-    const month = d.toLocaleString("en", { month: "short" });
-    days.push({ date: dateStr, label: `${weekdays[d.getDay()]} ${dayNum} ${month}` });
+    days.push({
+      date: dateStr,
+      dayName: dayNames[d.getDay()],
+      dayNum: d.getDate(),
+      month: months[d.getMonth()],
+      isToday: dateStr === today,
+    });
   }
   return days;
 }
@@ -40,74 +51,117 @@ interface ScheduleGridProps {
 }
 
 export function ScheduleGrid({ shifts, startDate, onReplace }: ScheduleGridProps) {
-  const days = getDayLabels(startDate);
+  const days = getDays(startDate);
 
   if (shifts.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground">
-        No schedule generated yet. Use the chat to generate one!
+      <div className="flex flex-col items-center justify-center h-full gap-4 text-center py-20">
+        <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center text-2xl">
+          <span className="opacity-50">&#x1f4c5;</span>
+        </div>
+        <div>
+          <p className="text-lg font-medium">No schedule yet</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Use the chat to generate a schedule for this week
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr>
-            <th className="sticky left-0 bg-background p-2 text-left font-medium text-muted-foreground w-24">
-              Period
-            </th>
-            {days.map((day) => (
-              <th key={day.date} className="p-2 text-center font-medium text-muted-foreground min-w-[140px]">
-                {day.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {PERIODS.map((period) => (
-            <tr key={period} className="border-t">
-              <td className="sticky left-0 bg-background p-2 font-medium text-muted-foreground align-top">
-                {PERIOD_LABELS[period]}
-              </td>
-              {days.map((day) => {
-                const cellShifts = shifts.filter(
-                  (s) => s.date === day.date && s.period === period,
-                );
-                return (
-                  <td key={day.date} className="p-2 align-top border-l">
-                    <div className="flex flex-col gap-1">
-                      {cellShifts.map((shift) => (
-                        <button
-                          key={shift.id}
-                          onClick={() => shift.assignedEmployeeId && onReplace(shift.id)}
-                          className={`text-left rounded-md border px-2 py-1 text-xs transition-colors ${
-                            shift.assignedEmployee
-                              ? `${ROLE_COLORS[shift.role]} hover:opacity-80 cursor-pointer`
-                              : "bg-muted/50 text-muted-foreground border-dashed cursor-default"
-                          }`}
-                          title={shift.explanation || undefined}
-                        >
-                          <div className="font-medium truncate">
-                            {shift.assignedEmployee?.name || "Unfilled"}
-                          </div>
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 mt-0.5">
-                            {shift.role}
-                          </Badge>
-                        </button>
-                      ))}
-                      {cellShifts.length === 0 && (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </div>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="grid grid-cols-[auto_repeat(7,1fr)] gap-0">
+      {/* Header row */}
+      <div className="p-3" />
+      {days.map((day) => (
+        <div
+          key={day.date}
+          className={`p-3 text-center border-b ${day.isToday ? "bg-primary/5" : ""}`}
+        >
+          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            {day.dayName}
+          </div>
+          <div className={`text-lg font-semibold mt-0.5 ${day.isToday ? "text-primary" : ""}`}>
+            {day.dayNum}
+          </div>
+          <div className="text-[10px] text-muted-foreground">{day.month}</div>
+        </div>
+      ))}
+
+      {/* Period rows */}
+      {PERIODS.map((period) => (
+        <>
+          {/* Period label */}
+          <div
+            key={`label-${period}`}
+            className="p-3 flex flex-col justify-center items-center border-r border-b"
+          >
+            <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+              {PERIOD_CONFIG[period].icon}
+            </span>
+            <span className="text-xs text-muted-foreground mt-0.5">
+              {PERIOD_CONFIG[period].time}
+            </span>
+          </div>
+
+          {/* Day cells */}
+          {days.map((day) => {
+            const cellShifts = shifts.filter(
+              (s) => s.date === day.date && s.period === period,
+            );
+            return (
+              <div
+                key={`${day.date}-${period}`}
+                className={`p-1.5 border-b border-r min-h-[100px] ${day.isToday ? "bg-primary/5" : ""}`}
+              >
+                <div className="flex flex-col gap-1">
+                  {cellShifts.map((shift) => {
+                    const role = ROLE_CONFIG[shift.role];
+                    const isFilled = !!shift.assignedEmployee;
+
+                    return (
+                      <Tooltip key={shift.id}>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => isFilled && onReplace(shift.id)}
+                            className={`w-full text-left rounded-lg px-2 py-1.5 text-xs transition-all ${
+                              isFilled
+                                ? `${role.color} ring-1 hover:ring-2 cursor-pointer`
+                                : "bg-muted/40 text-muted-foreground border border-dashed border-muted-foreground/20 cursor-default"
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isFilled ? role.dot : "bg-muted-foreground/30"}`} />
+                              <span className="font-medium truncate text-[11px]">
+                                {shift.assignedEmployee?.name.split(" ")[0] || "Open"}
+                              </span>
+                            </div>
+                            <span className="text-[9px] opacity-70 ml-3">{role.label}</span>
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <p className="font-medium">
+                            {shift.assignedEmployee?.name || "Unfilled slot"}
+                          </p>
+                          <p className="text-xs opacity-80 mt-0.5">
+                            {shift.role} &middot; {PERIOD_CONFIG[period].label}
+                          </p>
+                          {shift.explanation && (
+                            <p className="text-xs opacity-60 mt-1">{shift.explanation}</p>
+                          )}
+                          {isFilled && (
+                            <p className="text-xs mt-1.5 font-medium">Click to replace</p>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      ))}
     </div>
   );
 }
