@@ -11,7 +11,7 @@ import { Employee } from "../entities/Employee";
 import { Shift } from "../entities/Shift";
 import { Schedule } from "../entities/Schedule";
 import { ScheduleRequirement } from "../entities/ScheduleRequirement";
-import { generateSchedule, replaceEmployee } from "./scheduler";
+import { generateSchedule, replaceEmployee, replaceEmployeeBatch } from "./scheduler";
 
 /** Lazily initialized OpenAI client singleton */
 let _openai: OpenAI | null = null;
@@ -49,6 +49,7 @@ async function buildContext(scheduleId: number): Promise<string> {
   });
   const shifts = await AppDataSource.getRepository(Shift).find({
     where: { scheduleId },
+    relations: ["assignedEmployee"],
     order: { date: "ASC", period: "ASC" },
   });
   const requirements = await AppDataSource.getRepository(
@@ -79,7 +80,7 @@ async function buildContext(scheduleId: number): Promise<string> {
       ? shifts
           .map(
             (s) =>
-              `  [ShiftID:${s.id}] ${s.date} ${s.period} — ${s.role}: ${
+              `  [ShiftID:${s.id}] ${s.date} (${DAYS[new Date(s.date + "T00:00:00Z").getUTCDay()]}) ${s.period} — ${s.role}: ${
                 s.assignedEmployee?.name || "UNFILLED"
               }`
           )
@@ -136,6 +137,10 @@ You can perform actions by including JSON blocks in your response. When you need
 {"type": "replace_employee", "shiftId": 123}
 \`\`\`
 
+\`\`\`action
+{"type": "replace_employee_batch", "shiftIds": [123, 124, 125]}
+\`\`\`
+
 IMPORTANT RULES FOR REQUIREMENTS:
 - dayOfWeek: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
 - roles: "cook", "waiter", "dishwasher", "manager"
@@ -149,7 +154,7 @@ IMPORTANT RULES FOR REQUIREMENTS:
 RULES:
 - generate_schedule requires requirements to be set first. If none exist, set them first.
 - When replacing, find the correct shift ID from the context.
-- If a replacement request matches multiple shifts (e.g. "replace Camila on Friday" and she has both an afternoon and evening shift), replace ALL matching shifts. Include one action block per shift. Do NOT ask the user to confirm or choose — just execute all replacements.
+- If a replacement request matches multiple shifts (e.g. "replace Camila on Friday" and she has both an afternoon and evening shift), use replace_employee_batch with all matching shift IDs in a single action block instead of multiple replace_employee actions.
 - Always be helpful and explain what you did.
 - Use the employee names and shift IDs from the CONTEXT.
 - ALWAYS include action blocks when performing operations. Never respond with just information when the user is clearly requesting an action — investigate the context and execute.`;
@@ -253,6 +258,24 @@ async function executeAction(
         message: shift.assignedEmployee
           ? `Replaced with ${shift.assignedEmployee.name} on ${shift.date} ${shift.period}`
           : `Could not find a replacement for ${shift.role} on ${shift.date} ${shift.period}`,
+      };
+    }
+    case "replace_employee_batch": {
+      const { shiftIds } = action as { shiftIds: number[]; type: string };
+      if (!shiftIds || !Array.isArray(shiftIds) || shiftIds.length === 0) {
+        return {
+          type: action.type,
+          success: false,
+          message: "Missing or empty shiftIds array",
+        };
+      }
+      const shifts = await replaceEmployeeBatch(shiftIds);
+      const replaced = shifts.filter((s) => s.assignedEmployee).length;
+      const unfilled = shifts.length - replaced;
+      return {
+        type: action.type,
+        success: true,
+        message: `Processed ${shifts.length} shifts (${replaced} replaced, ${unfilled} unfilled)`,
       };
     }
     default:

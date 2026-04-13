@@ -275,3 +275,19 @@ export async function replaceEmployee(
 
   return shiftRepo.save(shift);
 }
+
+/**
+ * Replaces the assigned employee on multiple shifts at once.
+ * For each shift, attempts to find an eligible replacement; if none is found
+ * the shift becomes unfilled.
+ */
+export async function replaceEmployeeBatch(
+  shiftIds: number[]
+): Promise<Shift[]> {
+  const results: Shift[] = [];
+  for (const shiftId of shiftIds) {
+    const shift = await replaceEmployee(shiftId);
+    results.push(shift);
+  }
+  return results;
+}
