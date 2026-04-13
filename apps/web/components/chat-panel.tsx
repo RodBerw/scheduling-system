@@ -6,19 +6,17 @@ import { sendChatMessage } from "@/lib/api";
 import type { ChatMessage } from "@/lib/types";
 
 interface ChatPanelProps {
-  open: boolean;
-  onClose: () => void;
   onScheduleChange: () => void;
 }
 
 const SUGGESTIONS = [
   "Generate schedule for this week",
-  "Fill schedule for next Monday",
+  "Fill next week",
   "Replace Maria on Friday evening",
   "Who is working this weekend?",
 ];
 
-export function ChatPanel({ open, onClose, onScheduleChange }: ChatPanelProps) {
+export function ChatPanel({ onScheduleChange }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -34,10 +32,6 @@ export function ChatPanel({ open, onClose, onScheduleChange }: ChatPanelProps) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
-
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
 
   const handleSend = async (text?: string) => {
     const msg = (text || input).trim();
@@ -72,97 +66,84 @@ export function ChatPanel({ open, onClose, onScheduleChange }: ChatPanelProps) {
     }
   };
 
-  if (!open) return null;
-
   return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+    <div className="flex flex-col h-full border-l bg-background">
+      {/* Header */}
+      <div className="px-4 py-3 border-b">
+        <h2 className="font-semibold text-sm">AI Assistant</h2>
+        <p className="text-xs text-muted-foreground">Ask anything about the schedule</p>
+      </div>
 
-      {/* Panel */}
-      <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-background z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b">
-          <div>
-            <h2 className="font-semibold text-base">Scheduling Assistant</h2>
-            <p className="text-xs text-muted-foreground">Ask me anything about the schedule</p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0 text-lg">
-            &times;
-          </Button>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {messages.map((msg, i) => (
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          >
             <div
-              key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`max-w-[88%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                msg.role === "user"
+                  ? "bg-primary text-primary-foreground rounded-br-md"
+                  : "bg-muted rounded-bl-md"
+              }`}
             >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-br-md"
-                    : "bg-muted rounded-bl-md"
-                }`}
-              >
-                <span className="whitespace-pre-wrap">{msg.content}</span>
+              <span className="whitespace-pre-wrap">{msg.content}</span>
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
+              <div className="flex gap-1.5">
+                <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
               </div>
             </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
-                <div className="flex gap-1.5">
-                  <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        {/* Suggestions */}
-        {messages.length <= 2 && (
-          <div className="px-5 pb-2 flex flex-wrap gap-1.5">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                onClick={() => handleSend(s)}
-                className="text-xs px-3 py-1.5 rounded-full border hover:bg-muted transition-colors text-muted-foreground"
-              >
-                {s}
-              </button>
-            ))}
           </div>
         )}
+        <div ref={bottomRef} />
+      </div>
 
-        {/* Input */}
-        <div className="p-4 border-t">
-          <div className="flex items-end gap-2 bg-muted/50 rounded-xl px-4 py-2 ring-1 ring-border focus-within:ring-2 focus-within:ring-primary/50 transition-all">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message..."
-              disabled={loading}
-              rows={1}
-              className="flex-1 bg-transparent resize-none text-sm outline-none py-1.5 max-h-24 placeholder:text-muted-foreground/60"
-            />
-            <Button
-              onClick={() => handleSend()}
-              disabled={loading || !input.trim()}
-              size="sm"
-              className="rounded-lg h-8 px-3"
+      {/* Suggestions */}
+      {messages.length <= 2 && (
+        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              onClick={() => handleSend(s)}
+              className="text-[11px] px-2.5 py-1 rounded-full border hover:bg-muted transition-colors text-muted-foreground"
             >
-              Send
-            </Button>
-          </div>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Input */}
+      <div className="p-3 border-t">
+        <div className="flex items-end gap-2 bg-muted/50 rounded-xl px-3 py-1.5 ring-1 ring-border focus-within:ring-2 focus-within:ring-primary/50 transition-all">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type a message..."
+            disabled={loading}
+            rows={1}
+            className="flex-1 bg-transparent resize-none text-sm outline-none py-1.5 max-h-20 placeholder:text-muted-foreground/60"
+          />
+          <Button
+            onClick={() => handleSend()}
+            disabled={loading || !input.trim()}
+            size="sm"
+            className="rounded-lg h-7 px-2.5 text-xs"
+          >
+            Send
+          </Button>
         </div>
       </div>
-    </>
+    </div>
   );
 }

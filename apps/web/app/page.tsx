@@ -34,7 +34,6 @@ export default function Home() {
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
 
@@ -65,10 +64,10 @@ export default function Home() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="min-h-screen bg-background">
+      <div className="h-screen flex flex-col">
         {/* Top Bar */}
-        <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-lg border-b">
-          <div className="max-w-[1400px] mx-auto flex items-center justify-between px-6 py-3">
+        <header className="flex-shrink-0 bg-background border-b z-30">
+          <div className="flex items-center justify-between px-6 py-3">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
                 <span className="text-primary-foreground font-bold text-sm">RS</span>
@@ -129,53 +128,52 @@ export default function Home() {
               >
                 Generate Schedule
               </Button>
-              <Button
-                onClick={() => setChatOpen(true)}
-                size="sm"
-                className="h-9 gap-1.5"
-              >
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                AI Chat
-              </Button>
             </div>
           </div>
         </header>
 
-        {/* Legend + hint */}
-        <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-5 text-xs text-muted-foreground">
-            <span className="font-medium">Roles</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" /> Manager</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Cook</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" /> Waiter</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Dishwasher</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Click any shift to view details, replace, or reassign
-          </p>
-        </div>
-
-        {/* Schedule Grid */}
-        <main className="max-w-[1400px] mx-auto px-6 pb-8">
-          <div className="rounded-xl border bg-card overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center h-64 text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  Loading schedule...
-                </div>
+        {/* Main content: Grid + Chat side by side */}
+        <div className="flex-1 flex min-h-0">
+          {/* Schedule area */}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            {/* Legend */}
+            <div className="flex items-center justify-between px-6 py-2 border-b bg-muted/30 text-xs text-muted-foreground flex-shrink-0">
+              <div className="flex items-center gap-5">
+                <span className="font-medium">Roles</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" /> Manager</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Cook</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" /> Waiter</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Dishwasher</span>
               </div>
-            ) : (
-              <ScheduleGrid
-                shifts={shifts}
-                startDate={weekStart}
-                onShiftClick={handleShiftClick}
-              />
-            )}
+              <span>Click any shift to manage</span>
+            </div>
+
+            {/* Grid */}
+            <div className="flex-1 overflow-auto p-4">
+              {loading ? (
+                <div className="flex items-center justify-center h-64 text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    Loading schedule...
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border bg-card overflow-hidden">
+                  <ScheduleGrid
+                    shifts={shifts}
+                    startDate={weekStart}
+                    onShiftClick={handleShiftClick}
+                  />
+                </div>
+              )}
+            </div>
           </div>
-        </main>
+
+          {/* Chat panel — always visible */}
+          <div className="w-[360px] flex-shrink-0">
+            <ChatPanel onScheduleChange={fetchSchedule} />
+          </div>
+        </div>
 
         {/* Dialogs */}
         <ShiftDialog
@@ -183,7 +181,6 @@ export default function Home() {
           onClose={() => setSelectedShift(null)}
           onChanged={fetchSchedule}
         />
-
         <GenerateDialog
           open={generateOpen}
           onClose={() => setGenerateOpen(false)}
@@ -191,25 +188,6 @@ export default function Home() {
           defaultStart={weekStart}
           defaultEnd={weekEnd}
         />
-
-        {/* Chat Panel (Drawer) */}
-        <ChatPanel
-          open={chatOpen}
-          onClose={() => setChatOpen(false)}
-          onScheduleChange={fetchSchedule}
-        />
-
-        {/* FAB for chat on mobile */}
-        {!chatOpen && (
-          <button
-            onClick={() => setChatOpen(true)}
-            className="fixed bottom-6 right-6 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center hover:scale-105 transition-transform lg:hidden z-30"
-          >
-            <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-          </button>
-        )}
       </div>
     </TooltipProvider>
   );
