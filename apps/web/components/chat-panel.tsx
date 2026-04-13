@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { sendChatMessage } from "@/services/chatService";
 import type { ChatMessage } from "@/lib/types";
+import { Send, Bot, Sparkles } from "lucide-react";
 
 interface ChatPanelProps {
   scheduleId: number;
@@ -85,9 +86,14 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
   return (
     <div className="flex flex-col h-full border-l bg-background">
       {/* Header */}
-      <div className="px-4 py-3 border-b">
-        <h2 className="font-semibold text-sm" id="chat-heading">AI Assistant</h2>
-        <p className="text-xs text-muted-foreground">Ask anything about the schedule</p>
+      <div className="px-4 py-3 border-b flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+          <Bot className="w-4 h-4 text-primary" />
+        </div>
+        <div>
+          <h2 className="font-semibold text-sm" id="chat-heading">AI Assistant</h2>
+          <p className="text-[11px] text-muted-foreground">Ask anything about the schedule</p>
+        </div>
       </div>
 
       {/* Messages */}
@@ -98,7 +104,7 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[88%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+              className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                 msg.role === "user"
                   ? "bg-primary text-primary-foreground rounded-br-md"
                   : "bg-muted rounded-bl-md"
@@ -129,8 +135,9 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
             <button
               key={s}
               onClick={() => handleSend(s)}
-              className="text-[11px] px-2.5 py-1 rounded-full border hover:bg-muted transition-colors text-muted-foreground"
+              className="text-[11px] px-2.5 py-1.5 rounded-full border hover:bg-primary/5 hover:border-primary/30 transition-colors text-muted-foreground flex items-center gap-1 cursor-pointer"
             >
+              <Sparkles className="w-3 h-3 shrink-0" />
               {s}
             </button>
           ))}
@@ -155,10 +162,10 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
             onClick={() => handleSend()}
             disabled={loading || !input.trim()}
             size="sm"
-            className="rounded-lg h-7 px-2.5 text-xs"
+            className="rounded-lg h-8 w-8 p-0 shrink-0 cursor-pointer"
             aria-label="Send message"
           >
-            Send
+            <Send className="w-4 h-4" />
           </Button>
         </div>
       </div>
