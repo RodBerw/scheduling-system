@@ -1,3 +1,9 @@
+/**
+ * Shift entity.
+ * Represents a single work slot on a specific date, period, and role.
+ * May or may not have an assigned employee. The explanation field records
+ * the reasoning behind the assignment (or why it was left unfilled).
+ */
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from "typeorm";
 import { Employee, Role } from "./Employee";
 import { Schedule } from "./Schedule";
@@ -9,8 +15,9 @@ export class Shift {
   @PrimaryGeneratedColumn()
   id: number;
 
+  /** Shift date in YYYY-MM-DD format */
   @Column("varchar")
-  date: string; // YYYY-MM-DD
+  date: string;
 
   @Column("varchar")
   period: Period;
@@ -18,6 +25,7 @@ export class Shift {
   @Column("varchar")
   role: Role;
 
+  /** Eagerly loaded employee relation; null when the shift is unfilled */
   @ManyToOne(() => Employee, { nullable: true, eager: true })
   @JoinColumn({ name: "assignedEmployeeId" })
   assignedEmployee: Employee | null;
@@ -25,6 +33,7 @@ export class Shift {
   @Column("int", { nullable: true })
   assignedEmployeeId: number | null;
 
+  /** Human-readable reason for the current assignment state */
   @Column("text", { nullable: true })
   explanation: string | null;
 

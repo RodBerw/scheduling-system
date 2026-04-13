@@ -1,3 +1,8 @@
+/**
+ * TypeORM data source configuration.
+ * Uses sql.js (SQLite compiled to WASM) as the database engine,
+ * with auto-save and automatic schema synchronization enabled.
+ */
 import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { Employee } from "./entities/Employee";
