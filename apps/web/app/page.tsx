@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { getSchedules, createSchedule, deleteSchedule } from "@/lib/api";
+import { getSchedules, createSchedule, deleteSchedule } from "@/services/scheduleService";
 import type { Schedule } from "@/lib/types";
 
 function getDefaultDates() {

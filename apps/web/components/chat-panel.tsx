@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { sendChatMessage } from "@/lib/api";
+import { sendChatMessage } from "@/services/chatService";
 import type { ChatMessage } from "@/lib/types";
 
 interface ChatPanelProps {

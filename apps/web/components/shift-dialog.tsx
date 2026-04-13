@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getEligibleEmployees, assignEmployee, replaceShift } from "@/lib/api";
+import { getEligibleEmployees, assignEmployee, replaceShift } from "@/services/shiftService";
 import type { Shift, Employee } from "@/lib/types";
 
 const PERIOD_LABELS = { morning: "Morning", afternoon: "Afternoon", evening: "Evening" };

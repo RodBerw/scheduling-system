@@ -7,7 +7,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScheduleGrid } from "@/components/schedule-grid";
 import { ChatPanel } from "@/components/chat-panel";
 import { ShiftDialog } from "@/components/shift-dialog";
-import { getSchedule, getShifts, getRequirements, generateShifts } from "@/lib/api";
+import { getSchedule, getRequirements } from "@/services/scheduleService";
+import { getShifts, generateShifts } from "@/services/shiftService";
 import type { Schedule, Shift, ScheduleRequirement } from "@/lib/types";
 
 export default function ScheduleDetail() {
