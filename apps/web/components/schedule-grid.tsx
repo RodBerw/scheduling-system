@@ -25,21 +25,21 @@ const ROLE_CONFIG: Record<Role, { label: string; color: string; dot: string }> =
 function getDays(startDate: string) {
   const days: { date: string; dayName: string; dayNum: number; month: string; isToday: boolean; dayOfWeek: number }[] = [];
   const today = new Date().toISOString().split("T")[0];
-  const start = new Date(startDate + "T00:00:00");
+  const start = new Date(startDate + "T00:00:00Z");
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(start);
-    d.setDate(start.getDate() + i);
+    d.setUTCDate(start.getUTCDate() + i);
     const dateStr = d.toISOString().split("T")[0];
     days.push({
       date: dateStr,
-      dayName: dayNames[d.getDay()],
-      dayNum: d.getDate(),
-      month: months[d.getMonth()],
+      dayName: dayNames[d.getUTCDay()],
+      dayNum: d.getUTCDate(),
+      month: months[d.getUTCMonth()],
       isToday: dateStr === today,
-      dayOfWeek: d.getDay(),
+      dayOfWeek: d.getUTCDay(),
     });
   }
   return days;
@@ -93,7 +93,7 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick }: 
     }
 
     const cellShifts = shifts.filter(
-      (s) => new Date(s.date + "T00:00:00").getDay() === dayOfWeek && s.period === period,
+      (s) => new Date(s.date + "T00:00:00Z").getUTCDay() === dayOfWeek && s.period === period,
     );
     totalFilled = cellShifts.filter((s) => s.assignedEmployeeId).length;
 
@@ -121,9 +121,8 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick }: 
 
       {/* Period rows */}
       {PERIODS.map((period) => (
-        <>
+        <div key={`row-${period}`} className="contents">
           <div
-            key={`label-${period}`}
             className="p-3 flex flex-col justify-center items-center border-r border-b"
           >
             <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
@@ -231,7 +230,7 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick }: 
               </div>
             );
           })}
-        </>
+        </div>
       ))}
     </div>
   );

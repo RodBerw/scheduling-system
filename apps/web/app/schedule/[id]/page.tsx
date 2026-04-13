@@ -19,11 +19,15 @@ export default function ScheduleDetail() {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [requirements, setRequirements] = useState<ScheduleRequirement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (isNaN(scheduleId)) return;
     setLoading(true);
+    setError(null);
     try {
       const [s, sh, req] = await Promise.all([
         getSchedule(scheduleId),
@@ -34,7 +38,7 @@ export default function ScheduleDetail() {
       setShifts(sh);
       setRequirements(req);
     } catch {
-      // silent
+      setError("Failed to load schedule data. Is the API server running?");
     } finally {
       setLoading(false);
     }
@@ -46,11 +50,16 @@ export default function ScheduleDetail() {
 
   const handleGenerate = async () => {
     setGenerating(true);
+    setGenerateError(null);
     try {
       await generateShifts(scheduleId);
-      fetchData();
-    } catch {
-      // silent
+      await fetchData();
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : null;
+      setGenerateError(msg || "Failed to generate shifts. Please try again.");
     } finally {
       setGenerating(false);
     }
@@ -65,32 +74,41 @@ export default function ScheduleDetail() {
   const unfilledCount = shifts.length - filledCount;
 
   const formatRange = (start: string, end: string) => {
-    const s = new Date(start + "T00:00:00");
-    const e = new Date(end + "T00:00:00");
-    return `${s.toLocaleDateString("en", { month: "short", day: "numeric" })} - ${e.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}`;
+    const s = new Date(start + "T00:00:00Z");
+    const e = new Date(end + "T00:00:00Z");
+    return `${s.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })} - ${e.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`;
   };
+
+  if (isNaN(scheduleId)) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-destructive">Invalid schedule ID</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen text-muted-foreground">
+      <div className="flex items-center justify-center h-screen text-muted-foreground" role="status" aria-live="polite">
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
           Loading...
         </div>
       </div>
     );
   }
 
-  if (!schedule) {
+  if (error || !schedule) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p>Schedule not found</p>
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <p className="text-destructive">{error || "Schedule not found"}</p>
+        <Button variant="outline" onClick={fetchData}>Retry</Button>
       </div>
     );
   }
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <div className="h-screen flex flex-col">
         {/* Header */}
         <header className="flex-shrink-0 bg-background border-b z-30">
@@ -115,12 +133,12 @@ export default function ScheduleDetail() {
               {shifts.length > 0 && (
                 <div className="flex items-center gap-3 mr-2 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" />
                     {filledCount} filled
                   </span>
                   {unfilledCount > 0 && (
                     <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-orange-400" />
+                      <span className="w-2 h-2 rounded-full bg-orange-400" aria-hidden="true" />
                       {unfilledCount} open
                     </span>
                   )}
@@ -132,12 +150,26 @@ export default function ScheduleDetail() {
                 onClick={handleGenerate}
                 disabled={generating || requirements.length === 0}
                 className="h-9"
-                title={requirements.length === 0 ? "Set requirements first via chat" : ""}
+                title={
+                  requirements.length === 0
+                    ? "Set requirements first via chat"
+                    : generating
+                      ? "Generating shifts..."
+                      : ""
+                }
               >
                 {generating ? "Generating..." : shifts.length > 0 ? "Regenerate" : "Generate Shifts"}
               </Button>
             </div>
           </div>
+          {generateError && (
+            <div className="px-6 pb-2">
+              <div className="p-2 rounded-lg bg-destructive/10 text-destructive text-xs flex items-center justify-between">
+                <span>{generateError}</span>
+                <button onClick={() => setGenerateError(null)} className="text-destructive hover:underline ml-2">Dismiss</button>
+              </div>
+            </div>
+          )}
         </header>
 
         {/* Main: Grid + Chat */}
@@ -148,10 +180,10 @@ export default function ScheduleDetail() {
             <div className="flex items-center justify-between px-6 py-2 border-b bg-muted/30 text-xs text-muted-foreground flex-shrink-0">
               <div className="flex items-center gap-5">
                 <span className="font-medium">Roles</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" /> Manager</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Cook</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" /> Waiter</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Dishwasher</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" aria-hidden="true" /> Manager</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" aria-hidden="true" /> Cook</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" aria-hidden="true" /> Waiter</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" /> Dishwasher</span>
               </div>
               {requirements.length > 0 && (
                 <span>{requirements.length} staffing rules active</span>

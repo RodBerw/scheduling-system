@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { sendChatMessage } from "@/services/chatService";
 import type { ChatMessage } from "@/lib/types";
@@ -17,9 +17,19 @@ const SUGGESTIONS = [
   "Replace Maria on Friday evening",
 ];
 
+let msgIdCounter = 0;
+function nextMsgId() {
+  return `msg-${++msgIdCounter}`;
+}
+
+interface ChatMessageWithId extends ChatMessage {
+  id: string;
+}
+
 export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<ChatMessageWithId[]>([
     {
+      id: nextMsgId(),
       role: "assistant",
       content:
         "Hi! I can help you manage schedules. Try asking me to generate a schedule, replace someone, or check availability.",
@@ -34,11 +44,15 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  const focusInput = useCallback(() => {
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
   const handleSend = async (text?: string) => {
     const msg = (text || input).trim();
     if (!msg || loading) return;
 
-    const userMsg: ChatMessage = { role: "user", content: msg };
+    const userMsg: ChatMessageWithId = { id: nextMsgId(), role: "user", content: msg };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
@@ -46,17 +60,18 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
       const res = await sendChatMessage(msg, history, scheduleId);
-      setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
+      setMessages((prev) => [...prev, { id: nextMsgId(), role: "assistant", content: res.reply }]);
       if (res.actions?.length > 0) {
         onScheduleChange();
       }
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Something went wrong. Please try again." },
+        { id: nextMsgId(), role: "assistant", content: "Something went wrong. Please try again." },
       ]);
     } finally {
       setLoading(false);
+      focusInput();
     }
   };
 
@@ -71,15 +86,15 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
     <div className="flex flex-col h-full border-l bg-background">
       {/* Header */}
       <div className="px-4 py-3 border-b">
-        <h2 className="font-semibold text-sm">AI Assistant</h2>
+        <h2 className="font-semibold text-sm" id="chat-heading">AI Assistant</h2>
         <p className="text-xs text-muted-foreground">Ask anything about the schedule</p>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-        {messages.map((msg, i) => (
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" role="log" aria-labelledby="chat-heading">
+        {messages.map((msg) => (
           <div
-            key={i}
+            key={msg.id}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
@@ -94,7 +109,7 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
           </div>
         ))}
         {loading && (
-          <div className="flex justify-start">
+          <div className="flex justify-start" role="status" aria-live="polite">
             <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
               <div className="flex gap-1.5">
                 <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -133,6 +148,7 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
             placeholder="Type a message..."
             disabled={loading}
             rows={1}
+            aria-label="Chat message"
             className="flex-1 bg-transparent resize-none text-sm outline-none py-1.5 max-h-20 placeholder:text-muted-foreground/60"
           />
           <Button
@@ -140,6 +156,7 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
             disabled={loading || !input.trim()}
             size="sm"
             className="rounded-lg h-7 px-2.5 text-xs"
+            aria-label="Send message"
           >
             Send
           </Button>

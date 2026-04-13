@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,20 +29,26 @@ function getDefaultDates() {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<Schedule | null>(null);
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchSchedules = async () => {
     setLoading(true);
+    setError(null);
     try {
       setSchedules(await getSchedules());
     } catch {
-      // silent
+      setError("Failed to load schedules. Is the API server running?");
     } finally {
       setLoading(false);
     }
@@ -53,25 +60,38 @@ export default function Home() {
 
   const handleCreate = async () => {
     if (!name || !startDate || !endDate) return;
+    if (endDate < startDate) {
+      setCreateError("End date must be on or after start date");
+      return;
+    }
     setCreating(true);
+    setCreateError(null);
     try {
       const s = await createSchedule(name, startDate, endDate);
       setCreateOpen(false);
       setName("");
-      window.location.href = `/schedule/${s.id}`;
-    } catch {
-      // silent
+      router.push(`/schedule/${s.id}`);
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : null;
+      setCreateError(msg || "Failed to create schedule. Please try again.");
     } finally {
       setCreating(false);
     }
   };
 
   const handleDelete = async (id: number) => {
+    setDeleting(true);
     try {
       await deleteSchedule(id);
+      setDeleteConfirm(null);
       fetchSchedules();
     } catch {
-      // silent
+      setError("Failed to delete schedule. Please try again.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -80,13 +100,14 @@ export default function Home() {
     setStartDate(start);
     setEndDate(end);
     setName("");
+    setCreateError(null);
     setCreateOpen(true);
   };
 
   const formatRange = (start: string, end: string) => {
-    const s = new Date(start + "T00:00:00");
-    const e = new Date(end + "T00:00:00");
-    return `${s.toLocaleDateString("en", { month: "short", day: "numeric" })} - ${e.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}`;
+    const s = new Date(start + "T00:00:00Z");
+    const e = new Date(end + "T00:00:00Z");
+    return `${s.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })} - ${e.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`;
   };
 
   return (
@@ -111,17 +132,26 @@ export default function Home() {
 
       {/* Content */}
       <main className="max-w-4xl mx-auto px-6 py-8">
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center justify-between">
+            <span>{error}</span>
+            <Button variant="ghost" size="sm" onClick={() => setError(null)} className="text-destructive h-6 px-2">
+              Dismiss
+            </Button>
+          </div>
+        )}
+
         {loading ? (
-          <div className="flex items-center justify-center h-40 text-muted-foreground">
+          <div className="flex items-center justify-center h-40 text-muted-foreground" role="status" aria-live="polite">
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
               Loading...
             </div>
           </div>
         ) : schedules.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl opacity-40">&#128197;</span>
+              <span className="text-2xl opacity-40" aria-hidden="true">&#128197;</span>
             </div>
             <p className="text-lg font-medium">No schedules yet</p>
             <p className="text-sm text-muted-foreground mt-1 mb-6">
@@ -135,6 +165,10 @@ export default function Home() {
               <a
                 key={s.id}
                 href={`/schedule/${s.id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  router.push(`/schedule/${s.id}`);
+                }}
                 className="flex items-center justify-between p-4 rounded-xl border bg-card hover:bg-muted/50 transition-colors group"
               >
                 <div className="flex-1">
@@ -155,12 +189,12 @@ export default function Home() {
                   {(s.totalShifts ?? 0) > 0 ? (
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" />
                         {s.filledShifts} filled
                       </span>
                       {(s.unfilledShifts ?? 0) > 0 && (
                         <span className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full bg-orange-400" />
+                          <span className="w-2 h-2 rounded-full bg-orange-400" aria-hidden="true" />
                           {s.unfilledShifts} open
                         </span>
                       )}
@@ -172,13 +206,14 @@ export default function Home() {
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      handleDelete(s.id);
+                      setDeleteConfirm(s);
                     }}
                     className="opacity-0 group-hover:opacity-100 text-xs text-muted-foreground hover:text-destructive transition-all px-2 py-1 rounded"
+                    aria-label={`Delete schedule ${s.name}`}
                   >
                     Delete
                   </button>
-                  <span className="text-muted-foreground group-hover:translate-x-0.5 transition-transform">&#8594;</span>
+                  <span className="text-muted-foreground group-hover:translate-x-0.5 transition-transform" aria-hidden="true">&#8594;</span>
                 </div>
               </a>
             ))}
@@ -212,8 +247,35 @@ export default function Home() {
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             </div>
-            <Button onClick={handleCreate} disabled={creating || !name} className="w-full">
+            {createError && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-lg p-2.5">{createError}</p>
+            )}
+            <Button onClick={handleCreate} disabled={creating || !name || !startDate || !endDate} className="w-full">
               {creating ? "Creating..." : "Create Schedule"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Schedule</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &ldquo;{deleteConfirm?.name}&rdquo;? This will remove all shifts and requirements. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteConfirm && handleDelete(deleteConfirm.id)}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete"}
             </Button>
           </div>
         </DialogContent>

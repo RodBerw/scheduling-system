@@ -27,25 +27,35 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
   const [eligible, setEligible] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!shift) return;
     setLoading(true);
+    setError(null);
     getEligibleEmployees(shift.id)
       .then(setEligible)
-      .catch(() => setEligible([]))
+      .catch(() => {
+        setEligible([]);
+        setError("Failed to load eligible employees");
+      })
       .finally(() => setLoading(false));
   }, [shift]);
 
   const handleAssign = async (employeeId: number) => {
     if (!shift) return;
     setActionLoading(true);
+    setError(null);
     try {
       await assignEmployee(shift.id, employeeId);
       onChanged();
       onClose();
-    } catch {
-      // silent
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : null;
+      setError(msg || "Failed to assign employee. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -54,12 +64,17 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
   const handleAutoReplace = async () => {
     if (!shift) return;
     setActionLoading(true);
+    setError(null);
     try {
       await replaceShift(shift.id);
       onChanged();
       onClose();
-    } catch {
-      // silent
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : null;
+      setError(msg || "Failed to find a replacement. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -68,20 +83,21 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
   const handleUnassign = async () => {
     if (!shift) return;
     setActionLoading(true);
+    setError(null);
     try {
       await assignEmployee(shift.id, null);
       onChanged();
       onClose();
     } catch {
-      // silent
+      setError("Failed to unassign employee. Please try again.");
     } finally {
       setActionLoading(false);
     }
   };
 
   const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr + "T00:00:00");
-    return d.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" });
+    const d = new Date(dateStr + "T00:00:00Z");
+    return d.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
   };
 
   if (!shift) return null;
@@ -93,13 +109,20 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${ROLE_DOT[shift.role]}`} />
+            <span className={`w-2.5 h-2.5 rounded-full ${ROLE_DOT[shift.role]}`} aria-hidden="true" />
             {ROLE_LABELS[shift.role]} Shift
           </DialogTitle>
           <DialogDescription>
             {formatDate(shift.date)} &middot; {PERIOD_LABELS[shift.period]}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Error feedback */}
+        {error && (
+          <div className="p-2.5 rounded-lg bg-destructive/10 text-destructive text-sm">
+            {error}
+          </div>
+        )}
 
         {/* Current assignment */}
         <div className="space-y-4">
@@ -117,6 +140,7 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
                     size="sm"
                     onClick={handleAutoReplace}
                     disabled={actionLoading}
+                    aria-label={`Auto-replace ${shift.assignedEmployee.name} with another available ${ROLE_LABELS[shift.role].toLowerCase()}`}
                   >
                     Auto-replace
                   </Button>
@@ -158,6 +182,7 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
                   onClick={() => handleAssign(emp.id)}
                   disabled={actionLoading}
                   className="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-muted transition-colors text-left"
+                  aria-label={`Assign ${emp.name} to this shift`}
                 >
                   <div>
                     <p className="text-sm font-medium">{emp.name}</p>
