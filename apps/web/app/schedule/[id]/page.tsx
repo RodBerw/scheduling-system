@@ -222,7 +222,7 @@ export default function ScheduleDetail() {
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
                 <span className="hidden sm:inline">
-                  {generating ? "Generating..." : shifts.length > 0 ? "Regenerate" : "Generate Shifts"}
+                  {generating ? "Generating..." : shifts.length > 0 ? "Smart Fill" : "Generate Shifts"}
                 </span>
                 <span className="sm:hidden">
                   {generating ? "..." : "Generate"}
