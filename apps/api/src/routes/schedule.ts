@@ -53,8 +53,13 @@ router.post("/generate", async (req, res) => {
   if (!startDate || !endDate) {
     return res.status(400).json({ error: "startDate and endDate are required" });
   }
-  const shifts = await generateSchedule(startDate, endDate);
-  res.json({ message: `Generated ${shifts.length} shifts`, shifts });
+  try {
+    const shifts = await generateSchedule(startDate, endDate);
+    res.json({ message: `Generated ${shifts.length} shifts`, shifts });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Generation failed";
+    res.status(500).json({ error: message });
+  }
 });
 
 // POST /schedule/replace
@@ -63,8 +68,13 @@ router.post("/replace", async (req, res) => {
   if (!shiftId) {
     return res.status(400).json({ error: "shiftId is required" });
   }
-  const shift = await replaceEmployee(shiftId);
-  res.json({ message: "Replacement complete", shift });
+  try {
+    const shift = await replaceEmployee(shiftId);
+    res.json({ message: "Replacement complete", shift });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Replace failed";
+    res.status(404).json({ error: message });
+  }
 });
 
 export default router;

@@ -6,7 +6,17 @@ import { ScheduleRequirement } from "../entities/ScheduleRequirement";
 import { generateSchedule, replaceEmployee } from "./scheduler";
 import { Between } from "typeorm";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openai) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY is not set. Please configure it in apps/api/.env");
+    }
+    _openai = new OpenAI({ apiKey });
+  }
+  return _openai;
+}
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -163,7 +173,7 @@ export async function handleChatMessage(
     { role: "user", content: message },
   ];
 
-  const completion = await openai.chat.completions.create({
+  const completion = await getOpenAI().chat.completions.create({
     model: "gpt-4o-mini",
     messages,
     temperature: 0.3,
