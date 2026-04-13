@@ -6,6 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { CalendarDays, Clock, User, UserX } from "lucide-react";
 
 const PERIODS: Period[] = ["morning", "afternoon", "evening"];
 
@@ -15,11 +16,35 @@ const PERIOD_CONFIG: Record<Period, { label: string; icon: string; time: string 
   evening: { label: "Evening", icon: "NT", time: "6pm - 12am" },
 };
 
-const ROLE_CONFIG: Record<Role, { label: string; color: string; dot: string }> = {
-  manager: { label: "MGR", color: "bg-violet-50 text-violet-700 ring-violet-200", dot: "bg-violet-500" },
-  cook: { label: "COOK", color: "bg-amber-50 text-amber-700 ring-amber-200", dot: "bg-amber-500" },
-  waiter: { label: "WAIT", color: "bg-sky-50 text-sky-700 ring-sky-200", dot: "bg-sky-500" },
-  dishwasher: { label: "DISH", color: "bg-emerald-50 text-emerald-700 ring-emerald-200", dot: "bg-emerald-500" },
+const ROLE_CONFIG: Record<Role, { label: string; color: string; dot: string; badge: string; hoverBg: string }> = {
+  manager: {
+    label: "MGR",
+    color: "bg-violet-50 text-violet-700 ring-violet-200/60",
+    dot: "bg-violet-500",
+    badge: "bg-violet-100 text-violet-600",
+    hoverBg: "hover:bg-violet-100/80 hover:ring-violet-300",
+  },
+  cook: {
+    label: "COOK",
+    color: "bg-amber-50 text-amber-700 ring-amber-200/60",
+    dot: "bg-amber-500",
+    badge: "bg-amber-100 text-amber-600",
+    hoverBg: "hover:bg-amber-100/80 hover:ring-amber-300",
+  },
+  waiter: {
+    label: "WAIT",
+    color: "bg-sky-50 text-sky-700 ring-sky-200/60",
+    dot: "bg-sky-500",
+    badge: "bg-sky-100 text-sky-600",
+    hoverBg: "hover:bg-sky-100/80 hover:ring-sky-300",
+  },
+  dishwasher: {
+    label: "DISH",
+    color: "bg-emerald-50 text-emerald-700 ring-emerald-200/60",
+    dot: "bg-emerald-500",
+    badge: "bg-emerald-100 text-emerald-600",
+    hoverBg: "hover:bg-emerald-100/80 hover:ring-emerald-300",
+  },
 };
 
 function getDays(startDate: string) {
@@ -50,21 +75,22 @@ interface ScheduleGridProps {
   requirements: ScheduleRequirement[];
   startDate: string;
   onShiftClick: (shiftId: number) => void;
+  changedShiftIds?: Set<number>;
 }
 
-export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick }: ScheduleGridProps) {
+export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick, changedShiftIds }: ScheduleGridProps) {
   const days = getDays(startDate);
   const hasShifts = shifts.length > 0;
   const hasReqs = requirements.length > 0;
 
   if (!hasShifts && !hasReqs) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-center py-20">
-        <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center text-2xl">
-          <span className="opacity-50">&#x1f4c5;</span>
+      <div className="flex flex-col items-center justify-center h-full gap-4 text-center py-16 sm:py-20">
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <CalendarDays className="w-8 h-8 text-primary/50" />
         </div>
         <div>
-          <p className="text-lg font-medium">Empty schedule</p>
+          <p className="text-lg font-semibold">Empty schedule</p>
           <p className="text-sm text-muted-foreground mt-1 max-w-xs">
             Use the chat to set staffing requirements, then generate shifts
           </p>
@@ -172,39 +198,68 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick }: 
                   </div>
                 )}
 
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1.5">
                   {cellShifts.map((shift) => {
                     const role = ROLE_CONFIG[shift.role];
                     const isFilled = !!shift.assignedEmployee;
+                    const isChanged = changedShiftIds?.has(shift.id);
 
                     return (
                       <Tooltip key={shift.id}>
                         <TooltipTrigger
                           onClick={() => onShiftClick(shift.id)}
-                          className={`w-full text-left rounded-lg px-2 py-1.5 text-xs transition-all ${isFilled
-                              ? `${role.color} ring-1 hover:ring-2 cursor-pointer`
-                              : "bg-muted/40 text-muted-foreground border border-dashed border-muted-foreground/20 hover:bg-muted/70 cursor-pointer"
-                            }`}
+                          className={`group w-full text-left rounded-lg px-2 py-2 text-xs transition-all duration-200 cursor-pointer ${isFilled
+                              ? `${role.color} ring-1 shadow-sm ${role.hoverBg} hover:shadow-md hover:ring-2`
+                              : "bg-muted/30 text-muted-foreground border border-dashed border-muted-foreground/25 hover:bg-muted/60 hover:border-muted-foreground/40"
+                            } ${isChanged ? "animate-highlight-fade ring-2 ring-primary" : ""}`}
                         >
-                            <div className="flex items-center gap-1.5">
-                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isFilled ? role.dot : "bg-muted-foreground/30"}`} />
-                              <span className="font-medium truncate text-[11px]">
-                                {shift.assignedEmployee?.name.split(" ")[0] || "Open"}
+                          {isFilled ? (
+                            <>
+                              <div className="flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${role.dot} ring-2 ring-white/80`} />
+                                  <span className="font-semibold truncate text-[11px] leading-tight">
+                                    {shift.assignedEmployee?.name.split(" ")[0]}
+                                  </span>
+                                </div>
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 ${role.badge}`}>
+                                  {role.label}
+                                </span>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex items-center justify-between gap-1">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <UserX className="w-3 h-3 flex-shrink-0 opacity-40" />
+                                <span className="font-medium truncate text-[11px] opacity-60">
+                                  Open
+                                </span>
+                              </div>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground/60 flex-shrink-0">
+                                {role.label}
                               </span>
                             </div>
-                            <span className="text-[9px] opacity-70 ml-3">{role.label}</span>
+                          )}
                         </TooltipTrigger>
                         <TooltipContent side="top" className="max-w-xs">
-                          <p className="font-medium">
-                            {shift.assignedEmployee?.name || "Unfilled slot"}
-                          </p>
-                          <p className="text-xs opacity-80 mt-0.5">
+                          <div className="flex items-center gap-2">
+                            {isFilled ? (
+                              <User className="w-3.5 h-3.5 opacity-70" />
+                            ) : (
+                              <UserX className="w-3.5 h-3.5 opacity-70" />
+                            )}
+                            <p className="font-medium">
+                              {shift.assignedEmployee?.name || "Unfilled slot"}
+                            </p>
+                          </div>
+                          <p className="text-xs opacity-80 mt-1 flex items-center gap-1.5">
+                            <Clock className="w-3 h-3" />
                             {shift.role} &middot; {PERIOD_CONFIG[period].label}
                           </p>
                           {shift.explanation && (
-                            <p className="text-xs opacity-60 mt-1">{shift.explanation}</p>
+                            <p className="text-xs opacity-60 mt-1 italic">{shift.explanation}</p>
                           )}
-                          <p className="text-xs mt-1.5 font-medium">
+                          <p className="text-xs mt-1.5 font-medium opacity-70">
                             {isFilled ? "Click to replace or reassign" : "Click to assign someone"}
                           </p>
                         </TooltipContent>

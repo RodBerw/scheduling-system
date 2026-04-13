@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getEligibleEmployees, assignEmployee, replaceShift } from "@/services/shiftService";
 import type { Shift, Employee } from "@/lib/types";
+import { RefreshCw, UserMinus, UserPlus } from "lucide-react";
 
 const PERIOD_LABELS = { morning: "Morning", afternoon: "Afternoon", evening: "Evening" };
 const ROLE_LABELS = { manager: "Manager", cook: "Cook", waiter: "Waiter", dishwasher: "Dishwasher" };
@@ -140,17 +141,20 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
                     size="sm"
                     onClick={handleAutoReplace}
                     disabled={actionLoading}
+                    className="gap-1.5 cursor-pointer"
                     aria-label={`Auto-replace ${shift.assignedEmployee.name} with another available ${ROLE_LABELS[shift.role].toLowerCase()}`}
                   >
-                    Auto-replace
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Replace
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={handleUnassign}
                     disabled={actionLoading}
-                    className="text-destructive hover:text-destructive"
+                    className="text-destructive hover:text-destructive gap-1.5 cursor-pointer"
                   >
+                    <UserMinus className="w-3.5 h-3.5" />
                     Remove
                   </Button>
                 </div>
@@ -188,7 +192,8 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
                     <p className="text-sm font-medium">{emp.name}</p>
                     <p className="text-xs text-muted-foreground">{emp.maxHoursPerWeek}h/week max</p>
                   </div>
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-xs flex items-center gap-1">
+                    <UserPlus className="w-3 h-3" />
                     Assign
                   </Badge>
                 </button>
