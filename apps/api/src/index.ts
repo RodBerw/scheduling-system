@@ -1,3 +1,8 @@
+/**
+ * Application entry point.
+ * Initializes the Express server, registers middleware, mounts route modules,
+ * and connects to the database before starting to listen for requests.
+ */
 import "reflect-metadata";
 import dotenv from "dotenv";
 dotenv.config();
@@ -13,18 +18,22 @@ import chatRouter from "./routes/chat";
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Middleware
 app.use(cors({ origin: "http://localhost:3000" }));
 app.use(express.json());
 
+// Health check endpoint
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// Route modules
 app.use("/employees", employeesRouter);
 app.use("/shifts", shiftsRouter);
 app.use("/schedules", schedulesRouter);
 app.use("/chat", chatRouter);
 
+// Initialize database and start server
 AppDataSource.initialize()
   .then(() => {
     console.log("Database connected");

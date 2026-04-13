@@ -1,3 +1,10 @@
+/**
+ * AI Chat service.
+ * Integrates with OpenAI's GPT model to provide an intelligent scheduling assistant.
+ * The assistant can understand natural language requests and execute scheduling actions
+ * (set requirements, generate schedules, replace employees) via structured action blocks
+ * embedded in the model's response.
+ */
 import OpenAI from "openai";
 import { AppDataSource } from "../data-source";
 import { Employee } from "../entities/Employee";
@@ -6,51 +13,86 @@ import { Schedule } from "../entities/Schedule";
 import { ScheduleRequirement } from "../entities/ScheduleRequirement";
 import { generateSchedule, replaceEmployee } from "./scheduler";
 
+/** Lazily initialized OpenAI client singleton */
 let _openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
   if (!_openai) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      throw new Error("OPENAI_API_KEY is not set. Please configure it in apps/api/.env");
+      throw new Error(
+        "OPENAI_API_KEY is not set. Please configure it in apps/api/.env"
+      );
     }
     _openai = new OpenAI({ apiKey });
   }
   return _openai;
 }
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
+/**
+ * Builds a text snapshot of the current scheduling state (employees, requirements, shifts)
+ * to be included in the system prompt so the AI model has full context.
+ */
 async function buildContext(scheduleId: number): Promise<string> {
   const employees = await AppDataSource.getRepository(Employee).find();
-  const schedule = await AppDataSource.getRepository(Schedule).findOneOrFail({ where: { id: scheduleId } });
+  const schedule = await AppDataSource.getRepository(Schedule).findOneOrFail({
+    where: { id: scheduleId },
+  });
   const shifts = await AppDataSource.getRepository(Shift).find({
     where: { scheduleId },
     order: { date: "ASC", period: "ASC" },
   });
-  const requirements = await AppDataSource.getRepository(ScheduleRequirement).find({
+  const requirements = await AppDataSource.getRepository(
+    ScheduleRequirement
+  ).find({
     where: { scheduleId },
   });
 
   const empList = employees
-    .map((e) => `  [ID:${e.id}] ${e.name} (${e.role}, ${e.maxHoursPerWeek}h/wk, available: ${JSON.parse(e.availability).map((d: number) => DAYS[d]).join(", ")})`)
+    .map(
+      (e) =>
+        `  [ID:${e.id}] ${e.name} (${e.role}, ${
+          e.maxHoursPerWeek
+        }h/wk, available: ${JSON.parse(e.availability)
+          .map((d: number) => DAYS[d])
+          .join(", ")})`
+    )
     .join("\n");
 
-  const shiftSummary = shifts.length > 0
-    ? shifts
-        .map((s) => `  [ShiftID:${s.id}] ${s.date} ${s.period} — ${s.role}: ${s.assignedEmployee?.name || "UNFILLED"}`)
-        .join("\n")
-    : "  No shifts generated yet.";
+  const shiftSummary =
+    shifts.length > 0
+      ? shifts
+          .map(
+            (s) =>
+              `  [ShiftID:${s.id}] ${s.date} ${s.period} — ${s.role}: ${
+                s.assignedEmployee?.name || "UNFILLED"
+              }`
+          )
+          .join("\n")
+      : "  No shifts generated yet.";
 
-  const reqSummary = requirements.length > 0
-    ? [...new Set(requirements.map((r) => r.dayOfWeek))]
-        .sort()
-        .map((day) => {
-          const dayReqs = requirements.filter((r) => r.dayOfWeek === day);
-          const details = dayReqs.map((r) => `${r.period}: ${r.requiredCount} ${r.role}s`).join(", ");
-          return `  ${DAYS[day]}: ${details}`;
-        })
-        .join("\n")
-    : "  No requirements set yet.";
+  const reqSummary =
+    requirements.length > 0
+      ? [...new Set(requirements.map((r) => r.dayOfWeek))]
+          .sort()
+          .map((day) => {
+            const dayReqs = requirements.filter((r) => r.dayOfWeek === day);
+            const details = dayReqs
+              .map((r) => `${r.period}: ${r.requiredCount} ${r.role}s`)
+              .join(", ");
+            return `  ${DAYS[day]}: ${details}`;
+          })
+          .join("\n")
+      : "  No requirements set yet.";
 
   return `
 CURRENT DATE: ${new Date().toISOString().split("T")[0]}
@@ -68,6 +110,10 @@ ${shiftSummary}
 `.trim();
 }
 
+/**
+ * System prompt that instructs the AI model on its role, available actions,
+ * and the JSON action block format it should use to trigger scheduling operations.
+ */
 const SYSTEM_PROMPT = `You are a restaurant scheduling assistant. You help managers set up staffing requirements and generate schedules.
 
 You can perform actions by including JSON blocks in your response. When you need to execute an action, include it in this exact format:
@@ -106,6 +152,7 @@ interface ParsedAction {
   [key: string]: unknown;
 }
 
+/** Extracts JSON action blocks from the model's raw text response. */
 function parseActions(text: string): ParsedAction[] {
   const actions: ParsedAction[] = [];
   const regex = /```action\s*\n([\s\S]*?)```/g;
@@ -114,32 +161,53 @@ function parseActions(text: string): ParsedAction[] {
     try {
       actions.push(JSON.parse(match[1].trim()));
     } catch {
-      // Skip malformed
+      // Skip malformed action blocks
     }
   }
   return actions;
 }
 
+/** Removes action blocks from the model's response to produce clean user-facing text. */
 function stripActionBlocks(text: string): string {
   return text.replace(/```action\s*\n[\s\S]*?```/g, "").trim();
 }
 
+/**
+ * Executes a single parsed action against the database.
+ * Supports: set_requirements, generate_schedule, replace_employee.
+ */
 async function executeAction(
   action: ParsedAction,
-  scheduleId: number,
+  scheduleId: number
 ): Promise<{ type: string; success: boolean; message: string }> {
   switch (action.type) {
     case "set_requirements": {
       const { requirements } = action as {
         type: string;
-        requirements: { dayOfWeek: number; role: string; period: string; requiredCount: number }[];
+        requirements: {
+          dayOfWeek: number;
+          role: string;
+          period: string;
+          requiredCount: number;
+        }[];
       };
+
       if (!requirements || !Array.isArray(requirements)) {
-        return { type: action.type, success: false, message: "Invalid requirements format" };
+        return {
+          type: action.type,
+          success: false,
+          message: "Invalid requirements format",
+        };
       }
+
+      // Delete existing requirements
       const repo = AppDataSource.getRepository(ScheduleRequirement);
       await repo.delete({ scheduleId });
-      const entities = requirements.map((r) => repo.create({ ...r, scheduleId }));
+
+      // Set new requirements
+      const entities = requirements.map((r) =>
+        repo.create({ ...r, scheduleId } as Partial<ScheduleRequirement>)
+      );
       const saved = await repo.save(entities);
       return {
         type: action.type,
@@ -165,7 +233,11 @@ async function executeAction(
     case "replace_employee": {
       const { shiftId } = action as { shiftId: number; type: string };
       if (!shiftId) {
-        return { type: action.type, success: false, message: "Missing shiftId" };
+        return {
+          type: action.type,
+          success: false,
+          message: "Missing shiftId",
+        };
       }
       const shift = await replaceEmployee(shiftId);
       return {
@@ -177,15 +249,27 @@ async function executeAction(
       };
     }
     default:
-      return { type: action.type, success: false, message: `Unknown action: ${action.type}` };
+      return {
+        type: action.type,
+        success: false,
+        message: `Unknown action: ${action.type}`,
+      };
   }
 }
 
+/**
+ * Main chat handler. Sends the user message (with conversation history and
+ * current scheduling context) to the AI model, parses any action blocks from
+ * the response, executes them, and returns the cleaned reply along with action results.
+ */
 export async function handleChatMessage(
   message: string,
   history: { role: string; content: string }[],
-  scheduleId: number,
-): Promise<{ reply: string; actions: { type: string; success: boolean; message: string }[] }> {
+  scheduleId: number
+): Promise<{
+  reply: string;
+  actions: { type: string; success: boolean; message: string }[];
+}> {
   const context = await buildContext(scheduleId);
 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
@@ -203,16 +287,21 @@ export async function handleChatMessage(
     temperature: 0.3,
   });
 
-  const rawReply = completion.choices[0]?.message?.content || "Sorry, I couldn't process that.";
+  const rawReply =
+    completion.choices[0]?.message?.content ||
+    "Sorry, I couldn't process that.";
 
+  // Parse and execute any action blocks embedded in the model's response
   const parsedActions = parseActions(rawReply);
-  const actionResults: { type: string; success: boolean; message: string }[] = [];
+  const actionResults: { type: string; success: boolean; message: string }[] =
+    [];
 
   for (const action of parsedActions) {
     const result = await executeAction(action, scheduleId);
     actionResults.push(result);
   }
 
+  // Strip action blocks from the reply and append execution results
   let reply = stripActionBlocks(rawReply);
   if (actionResults.length > 0) {
     const resultText = actionResults
