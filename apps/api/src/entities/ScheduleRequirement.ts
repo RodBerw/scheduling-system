@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from "typeorm";
 import { Role } from "./Employee";
 import { Period } from "./Shift";
+import { Schedule } from "./Schedule";
 
 @Entity()
 export class ScheduleRequirement {
@@ -18,4 +19,11 @@ export class ScheduleRequirement {
 
   @Column("int")
   requiredCount: number;
+
+  @ManyToOne(() => Schedule, { nullable: true })
+  @JoinColumn({ name: "scheduleId" })
+  schedule: Schedule | null;
+
+  @Column("int", { nullable: true })
+  scheduleId: number | null;
 }

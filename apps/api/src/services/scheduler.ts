@@ -1,6 +1,7 @@
 import { AppDataSource } from "../data-source";
 import { Employee } from "../entities/Employee";
 import { Shift, Period } from "../entities/Shift";
+import { Schedule } from "../entities/Schedule";
 import { ScheduleRequirement } from "../entities/ScheduleRequirement";
 import { Between } from "typeorm";
 
@@ -45,35 +46,34 @@ function countAssignedHours(
   ).length * HOURS_PER_SHIFT;
 }
 
-export async function generateSchedule(
-  startDate: string,
-  endDate: string,
-): Promise<Shift[]> {
+export async function generateSchedule(scheduleId: number): Promise<Shift[]> {
   const shiftRepo = AppDataSource.getRepository(Shift);
   const employeeRepo = AppDataSource.getRepository(Employee);
   const reqRepo = AppDataSource.getRepository(ScheduleRequirement);
+  const scheduleRepo = AppDataSource.getRepository(Schedule);
 
-  // Delete existing shifts in range
-  await shiftRepo
-    .createQueryBuilder()
-    .delete()
-    .where("date >= :startDate AND date <= :endDate", { startDate, endDate })
-    .execute();
+  const schedule = await scheduleRepo.findOneOrFail({ where: { id: scheduleId } });
+  const { startDate, endDate } = schedule;
+
+  // Delete existing shifts for this schedule
+  await shiftRepo.delete({ scheduleId });
 
   const employees = await employeeRepo.find();
-  const requirements = await reqRepo.find();
+  const requirements = await reqRepo.find({ where: { scheduleId } });
+
+  if (requirements.length === 0) {
+    throw new Error("No requirements defined for this schedule. Please set requirements first.");
+  }
+
   const allShifts: Shift[] = [];
 
   for (const date of eachDate(startDate, endDate)) {
     const dayOfWeek = new Date(date + "T00:00:00").getDay();
     const { weekStart, weekEnd } = getWeekBounds(date);
 
-    // Get existing shifts in this week (outside range) for hour counting
+    // Get existing shifts in this week (from other schedules) for hour counting
     const existingWeekShifts = await shiftRepo.find({
-      where: [
-        { date: Between(weekStart, startDate < weekStart ? weekStart : startDate) },
-        { date: Between(endDate < weekEnd ? endDate : weekEnd, weekEnd) },
-      ],
+      where: { date: Between(weekStart, weekEnd) },
     });
     const weekShifts = [...existingWeekShifts, ...allShifts];
 
@@ -90,7 +90,6 @@ export async function generateSchedule(
             if (!availability.includes(dayOfWeek)) return false;
             const hours = countAssignedHours(weekShifts, emp.id, weekStart, weekEnd);
             if (hours + HOURS_PER_SHIFT > emp.maxHoursPerWeek) return false;
-            // Not already assigned to this date+period
             const alreadyAssigned = allShifts.some(
               (s) => s.date === date && s.period === period && s.assignedEmployeeId === emp.id,
             );
@@ -111,6 +110,7 @@ export async function generateSchedule(
             role: req.role,
             assignedEmployeeId: emp?.id ?? null,
             assignedEmployee: emp,
+            scheduleId,
             explanation: emp
               ? `${emp.name} assigned — fewest hours this week among available ${req.role}s`
               : `Unfilled — no eligible ${req.role} available for ${period}`,
@@ -121,7 +121,6 @@ export async function generateSchedule(
     }
   }
 
-  // Save all at once
   const saved = await shiftRepo.save(allShifts);
   return saved;
 }

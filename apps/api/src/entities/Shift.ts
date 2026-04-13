@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from "typeorm";
 import { Employee, Role } from "./Employee";
+import { Schedule } from "./Schedule";
 
 export type Period = "morning" | "afternoon" | "evening";
 
@@ -26,4 +27,11 @@ export class Shift {
 
   @Column("text", { nullable: true })
   explanation: string | null;
+
+  @ManyToOne(() => Schedule, { nullable: true })
+  @JoinColumn({ name: "scheduleId" })
+  schedule: Schedule | null;
+
+  @Column("int", { nullable: true })
+  scheduleId: number | null;
 }

@@ -1,8 +1,10 @@
 import "reflect-metadata";
 import { AppDataSource } from "./data-source";
 import { Employee } from "./entities/Employee";
+import { Schedule } from "./entities/Schedule";
 import { ScheduleRequirement } from "./entities/ScheduleRequirement";
 import { Shift } from "./entities/Shift";
+import { generateSchedule } from "./services/scheduler";
 
 async function seed() {
   await AppDataSource.initialize();
@@ -11,6 +13,7 @@ async function seed() {
   // Clear existing data
   await AppDataSource.getRepository(Shift).clear();
   await AppDataSource.getRepository(ScheduleRequirement).clear();
+  await AppDataSource.getRepository(Schedule).clear();
   await AppDataSource.getRepository(Employee).clear();
 
   // --- Employees ---
@@ -51,10 +54,46 @@ async function seed() {
   await employeeRepo.save(employees.map((e) => employeeRepo.create(e)));
   console.log(`Seeded ${employees.length} employees`);
 
-  // --- Schedule Requirements ---
+  // --- Schedules ---
+  const scheduleRepo = AppDataSource.getRepository(Schedule);
   const reqRepo = AppDataSource.getRepository(ScheduleRequirement);
 
-  type ReqTemplate = { role: Employee["role"]; morning: number; afternoon: number; evening: number };
+  // Helper to get week dates
+  const now = new Date();
+  const day = now.getDay();
+  const thisMonday = new Date(now);
+  thisMonday.setDate(now.getDate() - ((day + 6) % 7));
+  const thisSunday = new Date(thisMonday);
+  thisSunday.setDate(thisMonday.getDate() + 6);
+  const nextMonday = new Date(thisMonday);
+  nextMonday.setDate(thisMonday.getDate() + 7);
+  const nextSunday = new Date(nextMonday);
+  nextSunday.setDate(nextMonday.getDate() + 6);
+
+  const fmt = (d: Date) => d.toISOString().split("T")[0];
+
+  // Schedule 1: This week (with requirements + shifts filled)
+  const schedule1 = await scheduleRepo.save(
+    scheduleRepo.create({
+      name: "This Week",
+      startDate: fmt(thisMonday),
+      endDate: fmt(thisSunday),
+    }),
+  );
+  console.log(`Created schedule: "${schedule1.name}" (${schedule1.startDate} to ${schedule1.endDate})`);
+
+  // Schedule 2: Next week (with requirements, no shifts yet)
+  const schedule2 = await scheduleRepo.save(
+    scheduleRepo.create({
+      name: "Next Week",
+      startDate: fmt(nextMonday),
+      endDate: fmt(nextSunday),
+    }),
+  );
+  console.log(`Created schedule: "${schedule2.name}" (${schedule2.startDate} to ${schedule2.endDate})`);
+
+  // --- Requirements ---
+  type ReqTemplate = { role: "manager" | "cook" | "waiter" | "dishwasher"; morning: number; afternoon: number; evening: number };
 
   const weekdayReqs: ReqTemplate[] = [
     { role: "manager",    morning: 1, afternoon: 1, evening: 1 },
@@ -70,26 +109,32 @@ async function seed() {
     { role: "dishwasher", morning: 1, afternoon: 2, evening: 2 },
   ];
 
-  const requirements: Partial<ScheduleRequirement>[] = [];
-
-  for (let day = 0; day <= 6; day++) {
-    const isWeekend = day === 0 || day === 5 || day === 6; // Sun, Fri, Sat
-    const template = isWeekend ? weekendReqs : weekdayReqs;
-
-    for (const req of template) {
-      for (const period of ["morning", "afternoon", "evening"] as const) {
-        requirements.push({
-          dayOfWeek: day,
-          role: req.role,
-          period,
-          requiredCount: req[period],
-        });
+  // Add requirements to both schedules
+  for (const schedule of [schedule1, schedule2]) {
+    const requirements: Partial<ScheduleRequirement>[] = [];
+    for (let dayOfWeek = 0; dayOfWeek <= 6; dayOfWeek++) {
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
+      const template = isWeekend ? weekendReqs : weekdayReqs;
+      for (const req of template) {
+        for (const period of ["morning", "afternoon", "evening"] as const) {
+          requirements.push({
+            dayOfWeek,
+            role: req.role,
+            period,
+            requiredCount: req[period],
+            scheduleId: schedule.id,
+          });
+        }
       }
     }
+    await reqRepo.save(requirements.map((r) => reqRepo.create(r)));
+    console.log(`  Added ${requirements.length} requirements to "${schedule.name}"`);
   }
 
-  await reqRepo.save(requirements.map((r) => reqRepo.create(r)));
-  console.log(`Seeded ${requirements.length} schedule requirements`);
+  // Generate shifts for schedule 1 only
+  const shifts = await generateSchedule(schedule1.id);
+  const filled = shifts.filter((s) => s.assignedEmployeeId).length;
+  console.log(`  Generated ${shifts.length} shifts for "${schedule1.name}" (${filled} filled, ${shifts.length - filled} unfilled)`);
 
   await AppDataSource.destroy();
   console.log("Seed complete!");

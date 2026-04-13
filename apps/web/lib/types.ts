@@ -6,7 +6,19 @@ export interface Employee {
   name: string;
   role: Role;
   maxHoursPerWeek: number;
-  availability: string; // JSON array
+  availability: string;
+}
+
+export interface Schedule {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  totalShifts?: number;
+  filledShifts?: number;
+  unfilledShifts?: number;
+  hasRequirements?: boolean;
 }
 
 export interface Shift {
@@ -17,6 +29,16 @@ export interface Shift {
   assignedEmployeeId: number | null;
   assignedEmployee: Employee | null;
   explanation: string | null;
+  scheduleId: number | null;
+}
+
+export interface ScheduleRequirement {
+  id: number;
+  dayOfWeek: number;
+  role: Role;
+  period: Period;
+  requiredCount: number;
+  scheduleId: number | null;
 }
 
 export interface ChatMessage {
@@ -26,5 +48,5 @@ export interface ChatMessage {
 
 export interface ChatResponse {
   reply: string;
-  actions: { type: string; result?: unknown }[];
+  actions: { type: string; success: boolean; message: string }[];
 }

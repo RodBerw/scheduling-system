@@ -1,194 +1,223 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { ScheduleGrid } from "@/components/schedule-grid";
-import { ChatPanel } from "@/components/chat-panel";
-import { ShiftDialog } from "@/components/shift-dialog";
-import { GenerateDialog } from "@/components/generate-dialog";
-import { getSchedule } from "@/lib/api";
-import type { Shift } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { getSchedules, createSchedule, deleteSchedule } from "@/lib/api";
+import type { Schedule } from "@/lib/types";
 
-function getWeekStart(date: Date): string {
-  const d = new Date(date);
-  const day = d.getDay();
-  d.setDate(d.getDate() - ((day + 6) % 7));
-  return d.toISOString().split("T")[0];
-}
-
-function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
-}
-
-function formatWeekRange(start: string): string {
-  const s = new Date(start + "T00:00:00");
-  const e = new Date(start + "T00:00:00");
-  e.setDate(s.getDate() + 6);
-  return `${s.toLocaleDateString("en", { month: "short", day: "numeric" })} - ${e.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}`;
+function getDefaultDates() {
+  const now = new Date();
+  const day = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((day + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return {
+    start: monday.toISOString().split("T")[0],
+    end: sunday.toISOString().split("T")[0],
+  };
 }
 
 export default function Home() {
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
-  const [shifts, setShifts] = useState<Shift[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
-  const [generateOpen, setGenerateOpen] = useState(false);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [creating, setCreating] = useState(false);
 
-  const weekEnd = addDays(weekStart, 6);
-
-  const fetchSchedule = useCallback(async () => {
+  const fetchSchedules = async () => {
     setLoading(true);
     try {
-      setShifts(await getSchedule(weekStart, weekEnd));
+      setSchedules(await getSchedules());
     } catch {
       // silent
     } finally {
       setLoading(false);
     }
-  }, [weekStart, weekEnd]);
-
-  useEffect(() => {
-    fetchSchedule();
-  }, [fetchSchedule]);
-
-  const handleShiftClick = (shiftId: number) => {
-    const shift = shifts.find((s) => s.id === shiftId);
-    if (shift) setSelectedShift(shift);
   };
 
-  const filledCount = shifts.filter((s) => s.assignedEmployeeId).length;
-  const unfilledCount = shifts.length - filledCount;
+  useEffect(() => {
+    fetchSchedules();
+  }, []);
+
+  const handleCreate = async () => {
+    if (!name || !startDate || !endDate) return;
+    setCreating(true);
+    try {
+      const s = await createSchedule(name, startDate, endDate);
+      setCreateOpen(false);
+      setName("");
+      window.location.href = `/schedule/${s.id}`;
+    } catch {
+      // silent
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteSchedule(id);
+      fetchSchedules();
+    } catch {
+      // silent
+    }
+  };
+
+  const openCreateDialog = () => {
+    const { start, end } = getDefaultDates();
+    setStartDate(start);
+    setEndDate(end);
+    setName("");
+    setCreateOpen(true);
+  };
+
+  const formatRange = (start: string, end: string) => {
+    const s = new Date(start + "T00:00:00");
+    const e = new Date(end + "T00:00:00");
+    return `${s.toLocaleDateString("en", { month: "short", day: "numeric" })} - ${e.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}`;
+  };
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="h-screen flex flex-col">
-        {/* Top Bar */}
-        <header className="flex-shrink-0 bg-background border-b z-30">
-          <div className="flex items-center justify-between px-6 py-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-sm">RS</span>
-              </div>
-              <div>
-                <h1 className="font-semibold text-sm leading-tight">Restaurant Scheduler</h1>
-                <p className="text-xs text-muted-foreground">Workforce Management</p>
-              </div>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b">
+        <div className="max-w-4xl mx-auto flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+              <span className="text-primary-foreground font-bold text-sm">RS</span>
             </div>
-
-            {/* Week Navigation */}
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                onClick={() => setWeekStart(addDays(weekStart, -7))}
-              >
-                &#8592;
-              </Button>
-              <button
-                onClick={() => setWeekStart(getWeekStart(new Date()))}
-                className="text-sm font-medium px-3 py-1 rounded-md hover:bg-muted transition-colors min-w-[180px] text-center"
-              >
-                {formatWeekRange(weekStart)}
-              </button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                onClick={() => setWeekStart(addDays(weekStart, 7))}
-              >
-                &#8594;
-              </Button>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-2">
-              {shifts.length > 0 && (
-                <div className="flex items-center gap-3 mr-2 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    {filledCount} filled
-                  </span>
-                  {unfilledCount > 0 && (
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-orange-400" />
-                      {unfilledCount} open
-                    </span>
-                  )}
-                </div>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setGenerateOpen(true)}
-                className="h-9"
-              >
-                Generate Schedule
-              </Button>
+            <div>
+              <h1 className="font-semibold text-base">Restaurant Scheduler</h1>
+              <p className="text-xs text-muted-foreground">Workforce Management</p>
             </div>
           </div>
-        </header>
-
-        {/* Main content: Grid + Chat side by side */}
-        <div className="flex-1 flex min-h-0">
-          {/* Schedule area */}
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {/* Legend */}
-            <div className="flex items-center justify-between px-6 py-2 border-b bg-muted/30 text-xs text-muted-foreground flex-shrink-0">
-              <div className="flex items-center gap-5">
-                <span className="font-medium">Roles</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" /> Manager</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Cook</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" /> Waiter</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Dishwasher</span>
-              </div>
-              <span>Click any shift to manage</span>
-            </div>
-
-            {/* Grid */}
-            <div className="flex-1 overflow-auto p-4">
-              {loading ? (
-                <div className="flex items-center justify-center h-64 text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    Loading schedule...
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border bg-card overflow-hidden">
-                  <ScheduleGrid
-                    shifts={shifts}
-                    startDate={weekStart}
-                    onShiftClick={handleShiftClick}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Chat panel — always visible */}
-          <div className="w-[360px] flex-shrink-0">
-            <ChatPanel onScheduleChange={fetchSchedule} />
-          </div>
+          <Button onClick={openCreateDialog}>
+            New Schedule
+          </Button>
         </div>
+      </header>
 
-        {/* Dialogs */}
-        <ShiftDialog
-          shift={selectedShift}
-          onClose={() => setSelectedShift(null)}
-          onChanged={fetchSchedule}
-        />
-        <GenerateDialog
-          open={generateOpen}
-          onClose={() => setGenerateOpen(false)}
-          onGenerated={fetchSchedule}
-          defaultStart={weekStart}
-          defaultEnd={weekEnd}
-        />
-      </div>
-    </TooltipProvider>
+      {/* Content */}
+      <main className="max-w-4xl mx-auto px-6 py-8">
+        {loading ? (
+          <div className="flex items-center justify-center h-40 text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              Loading...
+            </div>
+          </div>
+        ) : schedules.length === 0 ? (
+          <div className="text-center py-20">
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl opacity-40">&#128197;</span>
+            </div>
+            <p className="text-lg font-medium">No schedules yet</p>
+            <p className="text-sm text-muted-foreground mt-1 mb-6">
+              Create your first schedule to get started
+            </p>
+            <Button onClick={openCreateDialog}>Create Schedule</Button>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {schedules.map((s) => (
+              <a
+                key={s.id}
+                href={`/schedule/${s.id}`}
+                className="flex items-center justify-between p-4 rounded-xl border bg-card hover:bg-muted/50 transition-colors group"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-medium">{s.name}</h3>
+                    {!s.hasRequirements && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">
+                        No requirements
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {formatRange(s.startDate, s.endDate)}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {(s.totalShifts ?? 0) > 0 ? (
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                        {s.filledShifts} filled
+                      </span>
+                      {(s.unfilledShifts ?? 0) > 0 && (
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-orange-400" />
+                          {s.unfilledShifts} open
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No shifts yet</span>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDelete(s.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 text-xs text-muted-foreground hover:text-destructive transition-all px-2 py-1 rounded"
+                  >
+                    Delete
+                  </button>
+                  <span className="text-muted-foreground group-hover:translate-x-0.5 transition-transform">&#8594;</span>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>New Schedule</DialogTitle>
+            <DialogDescription>Create a new weekly schedule</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Name</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Week of April 14"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Start date</Label>
+                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">End date</Label>
+                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              </div>
+            </div>
+            <Button onClick={handleCreate} disabled={creating || !name} className="w-full">
+              {creating ? "Creating..." : "Create Schedule"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

@@ -6,17 +6,18 @@ import { sendChatMessage } from "@/lib/api";
 import type { ChatMessage } from "@/lib/types";
 
 interface ChatPanelProps {
+  scheduleId: number;
   onScheduleChange: () => void;
 }
 
 const SUGGESTIONS = [
-  "Generate schedule for this week",
-  "Fill next week",
+  "Set requirements: 2 cooks, 3 waiters, 1 manager each shift",
+  "Add 4 cooks on weekend evenings",
+  "Generate the schedule",
   "Replace Maria on Friday evening",
-  "Who is working this weekend?",
 ];
 
-export function ChatPanel({ onScheduleChange }: ChatPanelProps) {
+export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -44,7 +45,7 @@ export function ChatPanel({ onScheduleChange }: ChatPanelProps) {
 
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
-      const res = await sendChatMessage(msg, history);
+      const res = await sendChatMessage(msg, history, scheduleId);
       setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
       if (res.actions?.length > 0) {
         onScheduleChange();

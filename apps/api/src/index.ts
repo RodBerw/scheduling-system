@@ -6,7 +6,8 @@ import express from "express";
 import cors from "cors";
 import { AppDataSource } from "./data-source";
 import employeesRouter from "./routes/employees";
-import scheduleRouter from "./routes/schedule";
+import shiftsRouter from "./routes/schedule";
+import schedulesRouter from "./routes/schedules";
 import chatRouter from "./routes/chat";
 
 const app = express();
@@ -20,7 +21,8 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/employees", employeesRouter);
-app.use("/schedule", scheduleRouter);
+app.use("/shifts", shiftsRouter);
+app.use("/schedules", schedulesRouter);
 app.use("/chat", chatRouter);
 
 AppDataSource.initialize()
