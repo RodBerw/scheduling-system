@@ -65,6 +65,9 @@ export async function assign(req: Request, res: Response) {
 /** GET /shifts/eligible/:shiftId — List employees eligible to fill a specific shift */
 export async function eligible(req: Request, res: Response) {
   const shiftId = parseInt(req.params.shiftId as string);
+  if (isNaN(shiftId)) {
+    return res.status(400).json({ error: "Invalid shiftId" });
+  }
   try {
     const employees = await shiftService.getEligibleEmployees(shiftId);
     res.json(employees);

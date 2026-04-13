@@ -21,7 +21,7 @@ export async function chat(req: Request, res: Response) {
     res.json(result);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Chat processing failed";
-    console.error("Chat error:", errorMessage);
+    console.error("Chat error:", err instanceof Error ? { message: err.message, stack: err.stack } : err);
 
     // Return a friendly message instead of 500 when the API key is missing
     if (errorMessage.includes("API key") || errorMessage.includes("OPENAI_API_KEY")) {

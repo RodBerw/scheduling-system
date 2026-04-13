@@ -28,7 +28,7 @@ export class ScheduleRequirement {
   @Column("int")
   requiredCount: number;
 
-  @ManyToOne(() => Schedule, { nullable: true })
+  @ManyToOne(() => Schedule, { nullable: true, onDelete: "CASCADE" })
   @JoinColumn({ name: "scheduleId" })
   schedule: Schedule | null;
 

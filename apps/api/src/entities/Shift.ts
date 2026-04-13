@@ -26,7 +26,7 @@ export class Shift {
   role: Role;
 
   /** Eagerly loaded employee relation; null when the shift is unfilled */
-  @ManyToOne(() => Employee, { nullable: true, eager: true })
+  @ManyToOne(() => Employee, { nullable: true, eager: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "assignedEmployeeId" })
   assignedEmployee: Employee | null;
 
@@ -37,7 +37,7 @@ export class Shift {
   @Column("text", { nullable: true })
   explanation: string | null;
 
-  @ManyToOne(() => Schedule, { nullable: true })
+  @ManyToOne(() => Schedule, { nullable: true, onDelete: "CASCADE" })
   @JoinColumn({ name: "scheduleId" })
   schedule: Schedule | null;
 

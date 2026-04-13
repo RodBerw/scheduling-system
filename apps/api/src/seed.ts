@@ -7,6 +7,11 @@ import { Shift } from "./entities/Shift";
 import { generateSchedule } from "./services/scheduler";
 
 async function seed() {
+  if (process.env.NODE_ENV === "production") {
+    console.error("Seed script cannot run in production. Set NODE_ENV to something else.");
+    process.exit(1);
+  }
+
   await AppDataSource.initialize();
   console.log("Database connected, seeding...");
 
@@ -70,7 +75,12 @@ async function seed() {
   const nextSunday = new Date(nextMonday);
   nextSunday.setDate(nextMonday.getDate() + 6);
 
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
+  const fmt = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
 
   // Schedule 1: This week (with requirements + shifts filled)
   const schedule1 = await scheduleRepo.save(
@@ -113,7 +123,7 @@ async function seed() {
   for (const schedule of [schedule1, schedule2]) {
     const requirements: Partial<ScheduleRequirement>[] = [];
     for (let dayOfWeek = 0; dayOfWeek <= 6; dayOfWeek++) {
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
       const template = isWeekend ? weekendReqs : weekdayReqs;
       for (const req of template) {
         for (const period of ["morning", "afternoon", "evening"] as const) {

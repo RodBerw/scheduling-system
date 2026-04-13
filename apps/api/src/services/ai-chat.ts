@@ -62,9 +62,13 @@ async function buildContext(scheduleId: number): Promise<string> {
       (e) =>
         `  [ID:${e.id}] ${e.name} (${e.role}, ${
           e.maxHoursPerWeek
-        }h/wk, available: ${JSON.parse(e.availability)
-          .map((d: number) => DAYS[d])
-          .join(", ")})`
+        }h/wk, available: ${(() => {
+          try {
+            return (JSON.parse(e.availability) as number[]).map((d: number) => DAYS[d]).join(", ");
+          } catch {
+            return "invalid availability data";
+          }
+        })()})`
     )
     .join("\n");
 
@@ -160,8 +164,8 @@ function parseActions(text: string): ParsedAction[] {
   while ((match = regex.exec(text)) !== null) {
     try {
       actions.push(JSON.parse(match[1].trim()));
-    } catch {
-      // Skip malformed action blocks
+    } catch (err) {
+      console.warn("Failed to parse AI action block:", match[1].trim(), err);
     }
   }
   return actions;
@@ -282,7 +286,7 @@ export async function handleChatMessage(
   ];
 
   const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
     messages,
     temperature: 0.3,
   });

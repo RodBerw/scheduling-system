@@ -17,33 +17,62 @@ export async function listSchedules() {
     order: { createdAt: "DESC" },
   });
 
-  return Promise.all(
-    schedules.map(async (s) => {
-      const totalShifts = await AppDataSource.getRepository(Shift).count({
-        where: { scheduleId: s.id },
-      });
-      const filledShifts = await AppDataSource.getRepository(Shift)
-        .createQueryBuilder("shift")
-        .where("shift.scheduleId = :id", { id: s.id })
-        .andWhere("shift.assignedEmployeeId IS NOT NULL")
-        .getCount();
-      const requirementCount = await AppDataSource.getRepository(ScheduleRequirement).count({
-        where: { scheduleId: s.id },
-      });
-      return {
-        ...s,
-        totalShifts,
-        filledShifts,
-        unfilledShifts: totalShifts - filledShifts,
-        hasRequirements: requirementCount > 0,
-      };
-    }),
-  );
+  if (schedules.length === 0) return [];
+
+  const scheduleIds = schedules.map((s) => s.id);
+
+  // Single aggregated query for shift stats
+  const shiftStats = await AppDataSource.getRepository(Shift)
+    .createQueryBuilder("shift")
+    .select("shift.scheduleId", "scheduleId")
+    .addSelect("COUNT(*)", "totalShifts")
+    .addSelect("SUM(CASE WHEN shift.assignedEmployeeId IS NOT NULL THEN 1 ELSE 0 END)", "filledShifts")
+    .where("shift.scheduleId IN (:...ids)", { ids: scheduleIds })
+    .groupBy("shift.scheduleId")
+    .getRawMany();
+
+  // Single query for requirement counts
+  const reqStats = await AppDataSource.getRepository(ScheduleRequirement)
+    .createQueryBuilder("req")
+    .select("req.scheduleId", "scheduleId")
+    .addSelect("COUNT(*)", "reqCount")
+    .where("req.scheduleId IN (:...ids)", { ids: scheduleIds })
+    .groupBy("req.scheduleId")
+    .getRawMany();
+
+  const shiftMap = new Map(shiftStats.map((r) => [r.scheduleId, r]));
+  const reqMap = new Map(reqStats.map((r) => [r.scheduleId, Number(r.reqCount)]));
+
+  return schedules.map((s) => {
+    const stats = shiftMap.get(s.id);
+    const totalShifts = stats ? Number(stats.totalShifts) : 0;
+    const filledShifts = stats ? Number(stats.filledShifts) : 0;
+    return {
+      ...s,
+      totalShifts,
+      filledShifts,
+      unfilledShifts: totalShifts - filledShifts,
+      hasRequirements: (reqMap.get(s.id) || 0) > 0,
+    };
+  });
 }
 
 /** Creates and persists a new schedule with the given name and date range. */
 export async function createSchedule(name: string, startDate: string, endDate: string) {
   const repo = AppDataSource.getRepository(Schedule);
+
+  // Check for overlapping schedules
+  const overlapping = await repo
+    .createQueryBuilder("s")
+    .where("s.startDate <= :endDate AND s.endDate >= :startDate", { startDate, endDate })
+    .getOne();
+
+  if (overlapping) {
+    throw new Error(
+      `Date range overlaps with existing schedule "${overlapping.name}" (${overlapping.startDate} to ${overlapping.endDate})`
+    );
+  }
+
   const schedule = repo.create({ name, startDate, endDate });
   return repo.save(schedule);
 }
