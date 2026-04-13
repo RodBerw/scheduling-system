@@ -77,4 +77,50 @@ router.post("/replace", async (req, res) => {
   }
 });
 
+// POST /schedule/assign — manually assign an employee to a shift
+router.post("/assign", async (req, res) => {
+  const { shiftId, employeeId } = req.body;
+  if (!shiftId) {
+    return res.status(400).json({ error: "shiftId is required" });
+  }
+  try {
+    const shiftRepo = AppDataSource.getRepository(Shift);
+    const shift = await shiftRepo.findOneOrFail({ where: { id: shiftId } });
+    shift.assignedEmployeeId = employeeId ?? null;
+    shift.explanation = employeeId ? "Manually assigned" : "Manually unassigned";
+    const saved = await shiftRepo.save(shift);
+    // reload with relation
+    const result = await shiftRepo.findOne({ where: { id: saved.id } });
+    res.json({ message: "Assignment updated", shift: result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Assignment failed";
+    res.status(400).json({ error: message });
+  }
+});
+
+// GET /schedule/eligible/:shiftId — get eligible employees for a shift
+router.get("/eligible/:shiftId", async (req, res) => {
+  const shiftId = parseInt(req.params.shiftId);
+  try {
+    const shiftRepo = AppDataSource.getRepository(Shift);
+    const shift = await shiftRepo.findOneOrFail({ where: { id: shiftId } });
+
+    const { Employee } = await import("../entities/Employee");
+    const employees = await AppDataSource.getRepository(Employee).find();
+
+    const dayOfWeek = new Date(shift.date + "T00:00:00").getDay();
+
+    const eligible = employees.filter((emp) => {
+      if (emp.role !== shift.role) return false;
+      const availability: number[] = JSON.parse(emp.availability);
+      return availability.includes(dayOfWeek);
+    });
+
+    res.json(eligible);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to get eligible employees";
+    res.status(400).json({ error: message });
+  }
+});
+
 export default router;

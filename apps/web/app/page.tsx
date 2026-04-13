@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScheduleGrid } from "@/components/schedule-grid";
 import { ChatPanel } from "@/components/chat-panel";
-import { getSchedule, replaceShift } from "@/lib/api";
+import { ShiftDialog } from "@/components/shift-dialog";
+import { GenerateDialog } from "@/components/generate-dialog";
+import { getSchedule } from "@/lib/api";
 import type { Shift } from "@/lib/types";
 
 function getWeekStart(date: Date): string {
@@ -33,6 +35,8 @@ export default function Home() {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
 
   const weekEnd = addDays(weekStart, 6);
 
@@ -51,13 +55,9 @@ export default function Home() {
     fetchSchedule();
   }, [fetchSchedule]);
 
-  const handleReplace = async (shiftId: number) => {
-    try {
-      await replaceShift(shiftId);
-      fetchSchedule();
-    } catch {
-      // silent
-    }
+  const handleShiftClick = (shiftId: number) => {
+    const shift = shifts.find((s) => s.id === shiftId);
+    if (shift) setSelectedShift(shift);
   };
 
   const filledCount = shifts.filter((s) => s.assignedEmployeeId).length;
@@ -108,7 +108,7 @@ export default function Home() {
             {/* Actions */}
             <div className="flex items-center gap-2">
               {shifts.length > 0 && (
-                <div className="flex items-center gap-3 mr-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-3 mr-2 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                     {filledCount} filled
@@ -122,22 +122,39 @@ export default function Home() {
                 </div>
               )}
               <Button
-                onClick={() => setChatOpen(true)}
-                className="rounded-xl gap-2 h-9 px-4 shadow-sm"
+                variant="outline"
+                size="sm"
+                onClick={() => setGenerateOpen(true)}
+                className="h-9"
               >
-                <span className="text-sm">AI Assistant</span>
+                Generate Schedule
+              </Button>
+              <Button
+                onClick={() => setChatOpen(true)}
+                size="sm"
+                className="h-9 gap-1.5"
+              >
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                AI Chat
               </Button>
             </div>
           </div>
         </header>
 
-        {/* Legend */}
-        <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center gap-5 text-xs text-muted-foreground">
-          <span className="font-medium">Roles</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" /> Manager</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Cook</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" /> Waiter</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Dishwasher</span>
+        {/* Legend + hint */}
+        <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-5 text-xs text-muted-foreground">
+            <span className="font-medium">Roles</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" /> Manager</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Cook</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" /> Waiter</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Dishwasher</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Click any shift to view details, replace, or reassign
+          </p>
         </div>
 
         {/* Schedule Grid */}
@@ -154,11 +171,26 @@ export default function Home() {
               <ScheduleGrid
                 shifts={shifts}
                 startDate={weekStart}
-                onReplace={handleReplace}
+                onShiftClick={handleShiftClick}
               />
             )}
           </div>
         </main>
+
+        {/* Dialogs */}
+        <ShiftDialog
+          shift={selectedShift}
+          onClose={() => setSelectedShift(null)}
+          onChanged={fetchSchedule}
+        />
+
+        <GenerateDialog
+          open={generateOpen}
+          onClose={() => setGenerateOpen(false)}
+          onGenerated={fetchSchedule}
+          defaultStart={weekStart}
+          defaultEnd={weekEnd}
+        />
 
         {/* Chat Panel (Drawer) */}
         <ChatPanel

@@ -47,10 +47,10 @@ function getDays(startDate: string) {
 interface ScheduleGridProps {
   shifts: Shift[];
   startDate: string;
-  onReplace: (shiftId: number) => void;
+  onShiftClick: (shiftId: number) => void;
 }
 
-export function ScheduleGrid({ shifts, startDate, onReplace }: ScheduleGridProps) {
+export function ScheduleGrid({ shifts, startDate, onShiftClick }: ScheduleGridProps) {
   const days = getDays(startDate);
 
   if (shifts.length === 0) {
@@ -123,11 +123,11 @@ export function ScheduleGrid({ shifts, startDate, onReplace }: ScheduleGridProps
                       <Tooltip key={shift.id}>
                         <TooltipTrigger asChild>
                           <button
-                            onClick={() => isFilled && onReplace(shift.id)}
+                            onClick={() => onShiftClick(shift.id)}
                             className={`w-full text-left rounded-lg px-2 py-1.5 text-xs transition-all ${
                               isFilled
                                 ? `${role.color} ring-1 hover:ring-2 cursor-pointer`
-                                : "bg-muted/40 text-muted-foreground border border-dashed border-muted-foreground/20 cursor-default"
+                                : "bg-muted/40 text-muted-foreground border border-dashed border-muted-foreground/20 hover:bg-muted/70 cursor-pointer"
                             }`}
                           >
                             <div className="flex items-center gap-1.5">
@@ -149,9 +149,9 @@ export function ScheduleGrid({ shifts, startDate, onReplace }: ScheduleGridProps
                           {shift.explanation && (
                             <p className="text-xs opacity-60 mt-1">{shift.explanation}</p>
                           )}
-                          {isFilled && (
-                            <p className="text-xs mt-1.5 font-medium">Click to replace</p>
-                          )}
+                          <p className="text-xs mt-1.5 font-medium">
+                            {isFilled ? "Click to replace or reassign" : "Click to assign someone"}
+                          </p>
                         </TooltipContent>
                       </Tooltip>
                     );

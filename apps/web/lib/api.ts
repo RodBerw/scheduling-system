@@ -42,6 +42,20 @@ export function replaceShift(
   });
 }
 
+export function getEligibleEmployees(shiftId: number): Promise<Employee[]> {
+  return fetchAPI(`/schedule/eligible/${shiftId}`);
+}
+
+export function assignEmployee(
+  shiftId: number,
+  employeeId: number | null,
+): Promise<{ message: string; shift: Shift }> {
+  return fetchAPI("/schedule/assign", {
+    method: "POST",
+    body: JSON.stringify({ shiftId, employeeId }),
+  });
+}
+
 export function sendChatMessage(
   message: string,
   history: { role: string; content: string }[],
