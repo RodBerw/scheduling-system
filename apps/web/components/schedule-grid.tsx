@@ -179,14 +179,13 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick }: 
 
                     return (
                       <Tooltip key={shift.id}>
-                        <TooltipTrigger >
-                          <button
-                            onClick={() => onShiftClick(shift.id)}
-                            className={`w-full text-left rounded-lg px-2 py-1.5 text-xs transition-all ${isFilled
-                                ? `${role.color} ring-1 hover:ring-2 cursor-pointer`
-                                : "bg-muted/40 text-muted-foreground border border-dashed border-muted-foreground/20 hover:bg-muted/70 cursor-pointer"
-                              }`}
-                          >
+                        <TooltipTrigger
+                          onClick={() => onShiftClick(shift.id)}
+                          className={`w-full text-left rounded-lg px-2 py-1.5 text-xs transition-all ${isFilled
+                              ? `${role.color} ring-1 hover:ring-2 cursor-pointer`
+                              : "bg-muted/40 text-muted-foreground border border-dashed border-muted-foreground/20 hover:bg-muted/70 cursor-pointer"
+                            }`}
+                        >
                             <div className="flex items-center gap-1.5">
                               <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isFilled ? role.dot : "bg-muted-foreground/30"}`} />
                               <span className="font-medium truncate text-[11px]">
@@ -194,7 +193,6 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick }: 
                               </span>
                             </div>
                             <span className="text-[9px] opacity-70 ml-3">{role.label}</span>
-                          </button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="max-w-xs">
                           <p className="font-medium">

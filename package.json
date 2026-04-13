@@ -2,7 +2,9 @@
   "name": "scheduling-app",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
     "dev:web": "npm -w @scheduling/web run dev",
