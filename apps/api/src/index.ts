@@ -3,6 +3,9 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { AppDataSource } from "./data-source";
+import employeesRouter from "./routes/employees";
+import scheduleRouter from "./routes/schedule";
+import chatRouter from "./routes/chat";
 
 dotenv.config();
 
@@ -15,6 +18,10 @@ app.use(express.json());
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
+
+app.use("/employees", employeesRouter);
+app.use("/schedule", scheduleRouter);
+app.use("/chat", chatRouter);
 
 AppDataSource.initialize()
   .then(() => {
