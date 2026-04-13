@@ -1,13 +1,13 @@
 import "reflect-metadata";
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import { AppDataSource } from "./data-source";
 import employeesRouter from "./routes/employees";
 import scheduleRouter from "./routes/schedule";
 import chatRouter from "./routes/chat";
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
