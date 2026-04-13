@@ -24,9 +24,9 @@ export async function chat(req: Request, res: Response) {
     console.error("Chat error:", err instanceof Error ? { message: err.message, stack: err.stack } : err);
 
     // Return a friendly message instead of 500 when the API key is missing
-    if (errorMessage.includes("API key") || errorMessage.includes("OPENAI_API_KEY")) {
+    if (errorMessage.includes("API key") || errorMessage.includes("GEMINI_API_KEY")) {
       return res.json({
-        reply: "OpenAI API key is not configured. Please set OPENAI_API_KEY in apps/api/.env to enable AI chat.",
+        reply: "Gemini API key is not configured. Please set GEMINI_API_KEY in apps/api/.env to enable AI chat.",
         actions: [],
       });
     }

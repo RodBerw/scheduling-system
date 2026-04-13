@@ -1,6 +1,6 @@
 /**
  * AI Chat service.
- * Integrates with OpenAI's GPT model to provide an intelligent scheduling assistant.
+ * Integrates with OpenAI to provide an intelligent scheduling assistant.
  * The assistant can understand natural language requests and execute scheduling actions
  * (set requirements, generate schedules, replace employees) via structured action blocks
  * embedded in the model's response.
@@ -64,7 +64,9 @@ async function buildContext(scheduleId: number): Promise<string> {
           e.maxHoursPerWeek
         }h/wk, available: ${(() => {
           try {
-            return (JSON.parse(e.availability) as number[]).map((d: number) => DAYS[d]).join(", ");
+            return (JSON.parse(e.availability) as number[])
+              .map((d: number) => DAYS[d])
+              .join(", ");
           } catch {
             return "invalid availability data";
           }
@@ -147,9 +149,10 @@ IMPORTANT RULES FOR REQUIREMENTS:
 RULES:
 - generate_schedule requires requirements to be set first. If none exist, set them first.
 - When replacing, find the correct shift ID from the context.
+- If a replacement request matches multiple shifts (e.g. "replace Camila on Friday" and she has both an afternoon and evening shift), replace ALL matching shifts. Include one action block per shift. Do NOT ask the user to confirm or choose — just execute all replacements.
 - Always be helpful and explain what you did.
 - Use the employee names and shift IDs from the CONTEXT.
-- ALWAYS include action blocks when performing operations.`;
+- ALWAYS include action blocks when performing operations. Never respond with just information when the user is clearly requesting an action — investigate the context and execute.`;
 
 interface ParsedAction {
   type: string;
@@ -263,7 +266,7 @@ async function executeAction(
 
 /**
  * Main chat handler. Sends the user message (with conversation history and
- * current scheduling context) to the AI model, parses any action blocks from
+ * current scheduling context) to OpenAI, parses any action blocks from
  * the response, executes them, and returns the cleaned reply along with action results.
  */
 export async function handleChatMessage(
@@ -277,11 +280,17 @@ export async function handleChatMessage(
   const context = await buildContext(scheduleId);
 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: `${SYSTEM_PROMPT}\n\nCONTEXT:\n${context}` },
-    ...history.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
+    {
+      role: "system",
+      content: `${SYSTEM_PROMPT}\n\nCONTEXT:\n${context}`,
+    },
+    ...history.map(
+      (m) =>
+        ({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: m.content,
+        }) as OpenAI.ChatCompletionMessageParam
+    ),
     { role: "user", content: message },
   ];
 
