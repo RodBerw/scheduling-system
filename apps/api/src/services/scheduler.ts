@@ -457,3 +457,65 @@ export async function replaceEmployeeBatch(
   }
   return results;
 }
+
+/**
+ * Swaps the assigned employees between two shifts.
+ * Employee on shiftA moves to shiftB and vice-versa.
+ *
+ * Uses raw `update()` calls inside a transaction to avoid TypeORM's
+ * eager-relation resolution overwriting the swapped foreign keys.
+ */
+export async function swapEmployees(
+  shiftIdA: number,
+  shiftIdB: number
+): Promise<[Shift, Shift]> {
+  return AppDataSource.transaction(async (manager) => {
+    const shiftRepo = manager.getRepository(Shift);
+
+    const shiftA = await shiftRepo.findOneOrFail({
+      where: { id: shiftIdA },
+      relations: ["assignedEmployee"],
+    });
+    const shiftB = await shiftRepo.findOneOrFail({
+      where: { id: shiftIdB },
+      relations: ["assignedEmployee"],
+    });
+
+    // Validate role compatibility
+    if (shiftA.role !== shiftB.role) {
+      throw new Error(
+        `Cannot swap: shift ${shiftIdA} requires ${shiftA.role} but shift ${shiftIdB} requires ${shiftB.role}`
+      );
+    }
+
+    // Capture values before any mutation
+    const empIdA = shiftA.assignedEmployeeId;
+    const empIdB = shiftB.assignedEmployeeId;
+    const empNameA = shiftA.assignedEmployee?.name;
+    const empNameB = shiftB.assignedEmployee?.name;
+
+    // Use update() to write only the FK + explanation columns,
+    // bypassing eager-relation resolution that can corrupt the swap.
+    await shiftRepo.update(shiftIdA, {
+      assignedEmployeeId: empIdB,
+      explanation: empNameB
+        ? `${empNameB} swapped from shift ${shiftIdB}`
+        : "Unfilled after swap",
+    });
+
+    await shiftRepo.update(shiftIdB, {
+      assignedEmployeeId: empIdA,
+      explanation: empNameA
+        ? `${empNameA} swapped from shift ${shiftIdA}`
+        : "Unfilled after swap",
+    });
+
+    // Re-fetch with relations so callers get complete entities
+    const [updatedA, updatedB] = await Promise.all([
+      shiftRepo.findOneOrFail({ where: { id: shiftIdA }, relations: ["assignedEmployee"] }),
+      shiftRepo.findOneOrFail({ where: { id: shiftIdB }, relations: ["assignedEmployee"] }),
+    ]);
+
+    return [updatedA, updatedB];
+  });
+}

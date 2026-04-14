@@ -15,6 +15,7 @@ import {
   fillNewShifts,
   replaceEmployee,
   replaceEmployeeBatch,
+  swapEmployees,
 } from "./scheduler";
 
 /** Lazily initialized OpenAI client singleton */
@@ -146,6 +147,13 @@ RULES:
 - Only use generate_schedule when the user explicitly asks to regenerate/recreate the entire schedule from scratch (it deletes all existing shifts).
 - When replacing, find the correct shift ID from the context.
 - If a replacement request matches multiple shifts (e.g. "replace Camila on Friday" and she has both an afternoon and evening shift), use replace_employee_batch with all matching shift IDs instead of multiple replace_employee calls.
+- SWAPPING — there are TWO different meanings. Pick the right one:
+  A) "Swap A FOR B at [time]" / "Put B in A's place on [time]" / "Replace A with B" → the user wants a SPECIFIC person (B) to take over A's shift.
+     → Use assign_employee: find A's shift ID at the specified time, then assign employee B to it.
+  B) "Swap A and B" / "Exchange A's and B's shifts" (no specific time, implies both move) → the user wants both employees to switch to each other's shift.
+     → Use swap_employees: find A's shift → shiftIdA, find B's shift → shiftIdB, call swap_employees(shiftIdA, shiftIdB).
+     → The two shifts MUST be different (different period or date). Only swap employees with the same role.
+  In BOTH cases, do NOT use replace_employee — it picks a random replacement, not the intended one.
 - Always be helpful and explain what you did.
 - Use the employee names and shift IDs from the CONTEXT.
 - ALWAYS call the appropriate tool when the user is requesting an action. Never respond with just information when an action is needed.`;
@@ -314,6 +322,28 @@ const TOOLS: OpenAI.ChatCompletionTool[] = [
             type: "array",
             items: { type: "number" },
             description: "The shift IDs to unassign.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "swap_employees",
+      description:
+        "Swap two employees between their respective shifts. shiftIdA is the shift currently assigned to employee A, shiftIdB is the shift currently assigned to employee B. After the swap, employee A will be on shift B and employee B will be on shift A. The two shifts must be different (different date or period).",
+      parameters: {
+        type: "object",
+        required: ["shiftIdA", "shiftIdB"],
+        properties: {
+          shiftIdA: {
+            type: "number",
+            description: "The shift ID where employee A is currently assigned (employee A will LEAVE this shift).",
+          },
+          shiftIdB: {
+            type: "number",
+            description: "The shift ID where employee B is currently assigned (employee B will LEAVE this shift).",
           },
         },
       },
@@ -569,6 +599,15 @@ async function executeAction(
         };
       }
 
+      // Validate role match
+      if (employee.role !== shift.role) {
+        return {
+          type: action.type,
+          success: false,
+          message: `Cannot assign ${employee.name} (${employee.role}) to a ${shift.role} shift`,
+        };
+      }
+
       // Assign the employee to the shift
       shift.assignedEmployeeId = employeeId;
       shift.assignedEmployee = employee;
@@ -618,6 +657,35 @@ async function executeAction(
         success: true,
         message: `Unassigned ${unassigned} of ${shiftIds.length} shifts`,
       };
+    }
+    case "swap_employees": {
+      const { shiftIdA, shiftIdB } = action as {
+        type: string;
+        shiftIdA: number;
+        shiftIdB: number;
+      };
+
+      if (!shiftIdA || !shiftIdB) {
+        return {
+          type: action.type,
+          success: false,
+          message: "Missing shiftIdA or shiftIdB",
+        };
+      }
+
+      try {
+        const [a, b] = await swapEmployees(shiftIdA, shiftIdB);
+        const nameA = a.assignedEmployee?.name || "unfilled";
+        const nameB = b.assignedEmployee?.name || "unfilled";
+        return {
+          type: action.type,
+          success: true,
+          message: `Swapped: shift ${shiftIdA} now has ${nameA}, shift ${shiftIdB} now has ${nameB}`,
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Swap failed";
+        return { type: action.type, success: false, message: msg };
+      }
     }
     default:
       // Return the error message
