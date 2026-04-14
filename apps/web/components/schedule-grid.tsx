@@ -47,16 +47,16 @@ const ROLE_CONFIG: Record<Role, { label: string; color: string; dot: string; bad
   },
 };
 
-function getDays(startDate: string) {
+function getDays(startDate: string, endDate: string) {
   const days: { date: string; dayName: string; dayNum: number; month: string; isToday: boolean; dayOfWeek: number }[] = [];
   const today = new Date().toISOString().split("T")[0];
   const start = new Date(startDate + "T00:00:00Z");
+  const end = new Date(endDate + "T00:00:00Z");
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(start);
-    d.setUTCDate(start.getUTCDate() + i);
+  const d = new Date(start);
+  while (d <= end) {
     const dateStr = d.toISOString().split("T")[0];
     days.push({
       date: dateStr,
@@ -66,6 +66,7 @@ function getDays(startDate: string) {
       isToday: dateStr === today,
       dayOfWeek: d.getUTCDay(),
     });
+    d.setUTCDate(d.getUTCDate() + 1);
   }
   return days;
 }
@@ -74,12 +75,14 @@ interface ScheduleGridProps {
   shifts: Shift[];
   requirements: ScheduleRequirement[];
   startDate: string;
+  endDate: string;
   onShiftClick: (shiftId: number) => void;
   changedShiftIds?: Set<number>;
 }
 
-export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick, changedShiftIds }: ScheduleGridProps) {
-  const days = getDays(startDate);
+export function ScheduleGrid({ shifts, requirements, startDate, endDate, onShiftClick, changedShiftIds }: ScheduleGridProps) {
+  const days = getDays(startDate, endDate);
+  const colCount = days.length;
   const hasShifts = shifts.length > 0;
   const hasReqs = requirements.length > 0;
 
@@ -108,7 +111,7 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick, ch
   };
 
   // Helper: get coverage summary for a cell
-  const getCellCoverage = (dayOfWeek: number, period: Period) => {
+  const getCellCoverage = (date: string, dayOfWeek: number, period: Period) => {
     const roles: Role[] = ["manager", "cook", "waiter", "dishwasher"];
     let totalRequired = 0;
     let totalFilled = 0;
@@ -119,7 +122,7 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick, ch
     }
 
     const cellShifts = shifts.filter(
-      (s) => new Date(s.date + "T00:00:00Z").getUTCDay() === dayOfWeek && s.period === period,
+      (s) => s.date === date && s.period === period,
     );
     totalFilled = cellShifts.filter((s) => s.assignedEmployeeId).length;
 
@@ -127,7 +130,7 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick, ch
   };
 
   return (
-    <div className="grid grid-cols-[auto_repeat(7,1fr)] gap-0">
+    <div className="grid gap-0" style={{ gridTemplateColumns: `auto repeat(${colCount}, minmax(140px, 1fr))` }}>
       {/* Header row */}
       <div className="p-3" />
       {days.map((day) => (
@@ -163,7 +166,7 @@ export function ScheduleGrid({ shifts, requirements, startDate, onShiftClick, ch
             const cellShifts = shifts.filter(
               (s) => s.date === day.date && s.period === period,
             );
-            const coverage = hasReqs ? getCellCoverage(day.dayOfWeek, period) : null;
+            const coverage = hasReqs ? getCellCoverage(day.date, day.dayOfWeek, period) : null;
 
             return (
               <div

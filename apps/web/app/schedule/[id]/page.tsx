@@ -110,7 +110,7 @@ export default function ScheduleDetail() {
     setGenerateError(null);
     try {
       await generateShifts(scheduleId);
-      await fetchData();
+      await fetchData(true);
     } catch (err: unknown) {
       const msg =
         err && typeof err === "object" && "response" in err
@@ -286,11 +286,12 @@ export default function ScheduleDetail() {
 
             {/* Grid */}
             <div className="flex-1 overflow-auto p-2 sm:p-4">
-              <div className="rounded-xl border bg-card overflow-hidden">
+              <div className="rounded-xl border bg-card overflow-auto">
                 <ScheduleGrid
                   shifts={shifts}
                   requirements={requirements}
                   startDate={schedule.startDate}
+                  endDate={schedule.endDate}
                   onShiftClick={handleShiftClick}
                   changedShiftIds={changedShiftIds}
                 />

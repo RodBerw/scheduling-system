@@ -145,11 +145,11 @@ IMPORTANT RULES FOR REQUIREMENTS:
 - dayOfWeek: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
 - roles: "cook", "waiter", "dishwasher", "manager"
 - periods: "morning", "afternoon", "evening"
-- When setting requirements, include ALL requirements (the action replaces all existing ones)
+- The set_requirements action MERGES with existing requirements — it only adds or updates the entries you specify, leaving all other existing requirements untouched
+- Only include the requirements you want to add or change, NOT all existing ones
 - If the user says "weekdays", that means Monday(1) through Friday(5)
 - If the user says "weekends", that means Saturday(6) and Sunday(0)
-- If requirements already exist and the user wants to add or modify some, merge with existing ones
-- Be smart about typical restaurant needs — if the user says "3 cooks on weekday evenings", generate requirements for Mon-Fri evenings with 3 cooks, but KEEP existing requirements for other slots
+- To remove a requirement, set its requiredCount to 0
 
 RULES:
 - generate_schedule requires requirements to be set first. If none exist, set them first.
@@ -212,15 +212,33 @@ async function executeAction(
         };
       }
 
-      // Delete existing requirements
+      // Merge with existing requirements instead of replacing all
       const repo = AppDataSource.getRepository(ScheduleRequirement);
-      await repo.delete({ scheduleId });
+      const existing = await repo.find({ where: { scheduleId } });
 
-      // Set new requirements
-      const entities = requirements.map((r) =>
-        repo.create({ ...r, scheduleId } as Partial<ScheduleRequirement>)
-      );
-      const saved = await repo.save(entities);
+      const saved: ScheduleRequirement[] = [];
+      for (const r of requirements) {
+        const match = existing.find(
+          (e) =>
+            e.dayOfWeek === r.dayOfWeek &&
+            e.role === r.role &&
+            e.period === r.period
+        );
+        if (match) {
+          if (r.requiredCount === 0) {
+            await repo.remove(match);
+          } else {
+            match.requiredCount = r.requiredCount;
+            saved.push(await repo.save(match));
+          }
+        } else if (r.requiredCount > 0) {
+          const entity = repo.create({
+            ...r,
+            scheduleId,
+          } as Partial<ScheduleRequirement>);
+          saved.push(await repo.save(entity));
+        }
+      }
       return {
         type: action.type,
         success: true,
