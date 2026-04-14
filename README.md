@@ -34,7 +34,7 @@ Built as a response to the [AllieHealth Engineering Challenge](https://github.co
 npm run setup
 ```
 
-This installs dependencies, creates the `.env` file (from `.env.example`), ensures the database directory exists, seeds sample data, and starts both servers. Edit `apps/api/.env` to add your `OPENAI_API_KEY` for the AI chat feature.
+This installs dependencies, creates the `.env` file (from `.env.example`), ensures the database directory exists, seeds sample data, and starts both servers. Works on Windows, macOS, and Linux. Edit `apps/api/.env` to add your `OPENAI_API_KEY` for the AI chat feature.
 
 ### Manual Setup
 

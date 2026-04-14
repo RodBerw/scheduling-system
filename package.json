@@ -6,7 +6,7 @@
     "apps/*"
   ],
   "scripts": {
-    "setup": "bash scripts/setup.sh",
+    "setup": "node scripts/setup.mjs",
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
     "dev:web": "npm -w @scheduling/web run dev",
     "dev:api": "npm -w @scheduling/api run dev",
