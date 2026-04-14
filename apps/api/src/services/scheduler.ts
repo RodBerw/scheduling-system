@@ -9,17 +9,18 @@ import { Employee } from "../entities/Employee";
 import { Shift, Period } from "../entities/Shift";
 import { Schedule } from "../entities/Schedule";
 import { ScheduleRequirement } from "../entities/ScheduleRequirement";
-import { Between } from "typeorm";
+import { Between, EntityManager } from "typeorm";
 
 /** Each shift counts as 4 hours toward an employee's weekly limit */
 const HOURS_PER_SHIFT = 4;
 const PERIODS: Period[] = ["morning", "afternoon", "evening"];
 
+// ---------------------------------------------------------------------------
+// Date helpers
+// ---------------------------------------------------------------------------
+
 /** Calculates the Monday–Sunday boundaries of the week containing the given date. */
-function getWeekBounds(dateStr: string): {
-  weekStart: string;
-  weekEnd: string;
-} {
+export function getWeekBounds(dateStr: string): { weekStart: string; weekEnd: string } {
   const d = new Date(dateStr + "T00:00:00Z");
   const day = d.getUTCDay();
   const monday = new Date(d);
@@ -33,7 +34,7 @@ function getWeekBounds(dateStr: string): {
 }
 
 /** Returns an array of all dates (YYYY-MM-DD) between startDate and endDate inclusive. */
-function eachDate(startDate: string, endDate: string): string[] {
+export function eachDate(startDate: string, endDate: string): string[] {
   const dates: string[] = [];
   const current = new Date(startDate + "T00:00:00Z");
   const end = new Date(endDate + "T00:00:00Z");
@@ -44,8 +45,12 @@ function eachDate(startDate: string, endDate: string): string[] {
   return dates;
 }
 
+// ---------------------------------------------------------------------------
+// Employee eligibility helpers
+// ---------------------------------------------------------------------------
+
 /** Counts how many hours an employee has been assigned within a given week range. */
-function countAssignedHours(
+export function countWeeklyHours(
   shifts: Shift[],
   employeeId: number,
   weekStart: string,
@@ -61,6 +66,158 @@ function countAssignedHours(
   );
 }
 
+/** Safely parses an employee's availability JSON. Returns null on failure. */
+function parseAvailability(employee: Employee): number[] | null {
+  try {
+    return JSON.parse(employee.availability);
+  } catch {
+    console.warn(
+      `Invalid availability JSON for employee ${employee.id} (${employee.name})`
+    );
+    return null;
+  }
+}
+
+/**
+ * Finds eligible employees for a shift slot, sorted by fewest weekly hours (greedy).
+ *
+ * Filters by: matching role, day-of-week availability, weekly hour limit,
+ * not already assigned to the same date+period, and not in the exclude list.
+ */
+export function findEligibleEmployees(
+  employees: Employee[],
+  allShifts: Shift[],
+  opts: {
+    role: string;
+    date: string;
+    period: string;
+    weekStart: string;
+    weekEnd: string;
+    excludeIds?: number[];
+    excludeShiftId?: number;
+  }
+): Employee[] {
+  const dayOfWeek = new Date(opts.date + "T00:00:00Z").getUTCDay();
+  const excludeIds = opts.excludeIds ?? [];
+
+  return employees
+    .filter((emp) => {
+      if (emp.role !== opts.role) return false;
+      if (excludeIds.includes(emp.id)) return false;
+
+      const availability = parseAvailability(emp);
+      if (!availability || !availability.includes(dayOfWeek)) return false;
+
+      // Check weekly hour limit
+      const hours = countWeeklyHours(allShifts, emp.id, opts.weekStart, opts.weekEnd);
+      if (hours + HOURS_PER_SHIFT > emp.maxHoursPerWeek) return false;
+
+      // Check if the employee is already assigned to this date+period
+      const alreadyAssigned = allShifts.some(
+        (s) =>
+          s.id !== opts.excludeShiftId &&
+          s.date === opts.date &&
+          s.period === opts.period &&
+          s.assignedEmployeeId === emp.id
+      );
+      if (alreadyAssigned) return false;
+
+      return true;
+    })
+    .sort((a, b) => {
+      // Greedy: prefer the employee with the fewest assigned hours this week
+      const hoursA = countWeeklyHours(allShifts, a.id, opts.weekStart, opts.weekEnd);
+      const hoursB = countWeeklyHours(allShifts, b.id, opts.weekStart, opts.weekEnd);
+      return hoursA - hoursB;
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Shift creation helper
+// ---------------------------------------------------------------------------
+
+/** Creates a shift entity with an explanation of why the employee was (or wasn't) assigned. */
+function buildShift(
+  shiftRepo: ReturnType<EntityManager["getRepository"]>,
+  params: {
+    date: string;
+    period: string;
+    role: string;
+    scheduleId: number;
+    employee: Employee | null;
+  }
+): Shift {
+  const { date, period, role, scheduleId, employee } = params;
+  return shiftRepo.create({
+    date,
+    period,
+    role,
+    assignedEmployeeId: employee?.id ?? null,
+    assignedEmployee: employee,
+    scheduleId,
+    explanation: employee
+      ? `${employee.name} assigned — fewest hours this week among available ${role}s`
+      : `Unfilled — no eligible ${role} available for ${period}`,
+  }) as Shift;
+}
+
+// ---------------------------------------------------------------------------
+// Generation lock
+// ---------------------------------------------------------------------------
+
+/** Lock to prevent concurrent schedule generation for the same schedule */
+const generationLocks = new Set<number>();
+
+/** Acquires a per-schedule lock, runs the callback, then releases. */
+async function withGenerationLock<T>(
+  scheduleId: number,
+  fn: () => Promise<T>
+): Promise<T> {
+  if (generationLocks.has(scheduleId)) {
+    throw new Error(
+      "Schedule generation already in progress for this schedule."
+    );
+  }
+  generationLocks.add(scheduleId);
+  try {
+    return await fn();
+  } finally {
+    generationLocks.delete(scheduleId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared data loading
+// ---------------------------------------------------------------------------
+
+/** Loads the schedule, employees, and requirements for a given schedule ID. */
+async function loadScheduleData(manager: EntityManager, scheduleId: number) {
+  const scheduleRepo = manager.getRepository(Schedule);
+  const employeeRepo = manager.getRepository(Employee);
+  const requirementRepo = manager.getRepository(ScheduleRequirement);
+
+  const schedule = await scheduleRepo.findOneOrFail({
+    where: { id: scheduleId },
+  });
+
+  const employees = await employeeRepo.find();
+  const requirements = await requirementRepo.find({
+    where: { scheduleId },
+  });
+
+  if (requirements.length === 0) {
+    throw new Error(
+      "No requirements defined for this schedule. Please set requirements first."
+    );
+  }
+
+  return { schedule, employees, requirements };
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
  * Generates all shifts for a schedule based on its defined requirements.
  *
@@ -73,40 +230,15 @@ function countAssignedHours(
  *
  * Existing shifts for the schedule are deleted before regeneration.
  */
-/** Lock to prevent concurrent schedule generation for the same schedule */
-const generationLocks = new Set<number>();
-
 export async function generateSchedule(scheduleId: number): Promise<Shift[]> {
-  if (generationLocks.has(scheduleId)) {
-    throw new Error("Schedule generation already in progress for this schedule.");
-  }
-  generationLocks.add(scheduleId);
-
-  try {
-    return await AppDataSource.transaction(async (manager) => {
+  return withGenerationLock(scheduleId, () =>
+    AppDataSource.transaction(async (manager) => {
       const shiftRepo = manager.getRepository(Shift);
-      const employeeRepo = manager.getRepository(Employee);
-      const requirementRepo = manager.getRepository(ScheduleRequirement);
-      const scheduleRepo = manager.getRepository(Schedule);
-
-      // Get the schedule
-      const schedule = await scheduleRepo.findOneOrFail({
-        where: { id: scheduleId },
-      });
+      const { schedule, employees, requirements } = await loadScheduleData(manager, scheduleId);
       const { startDate, endDate } = schedule;
 
       // Clear previous shifts for this schedule before regenerating
       await shiftRepo.delete({ scheduleId });
-
-      // Get the employees and requirements
-      const employees = await employeeRepo.find();
-      const requirements = await requirementRepo.find({ where: { scheduleId } });
-
-      if (requirements.length === 0) {
-        throw new Error(
-          "No requirements defined for this schedule. Please set requirements first."
-        );
-      }
 
       const allShifts: Shift[] = [];
 
@@ -131,84 +263,33 @@ export async function generateSchedule(scheduleId: number): Promise<Shift[]> {
           for (const requirement of dayRequirements) {
             // Filter and sort eligible employees: matching role, available on this day,
             // under weekly hour limit, and not already assigned to this date+period
-            const eligible = employees
-              .filter((employee) => {
-                if (employee.role !== requirement.role) return false;
-
-                let availability: number[];
-                try {
-                  availability = JSON.parse(employee.availability);
-                } catch {
-                  console.warn(`Invalid availability JSON for employee ${employee.id} (${employee.name})`);
-                  return false;
-                }
-
-                if (!availability.includes(dayOfWeek)) return false;
-
-                // Count the hours assigned to the employee this week
-                const hours = countAssignedHours(
-                  weekShifts,
-                  employee.id,
-                  weekStart,
-                  weekEnd
-                );
-
-                if (hours + HOURS_PER_SHIFT > employee.maxHoursPerWeek)
-                  return false;
-
-                const alreadyAssigned = allShifts.some(
-                  (s) =>
-                    s.date === date &&
-                    s.period === period &&
-                    s.assignedEmployeeId === employee.id
-                );
-                if (alreadyAssigned) return false;
-                return true;
-              })
-              .sort((a, b) => {
-                // Greedy: prefer the employee with the fewest assigned hours this week
-                const hoursA = countAssignedHours(
-                  weekShifts,
-                  a.id,
-                  weekStart,
-                  weekEnd
-                );
-                const hoursB = countAssignedHours(
-                  weekShifts,
-                  b.id,
-                  weekStart,
-                  weekEnd
-                );
-                return hoursA - hoursB;
-              });
+            const eligible = findEligibleEmployees(employees, weekShifts, {
+              role: requirement.role,
+              date,
+              period,
+              weekStart,
+              weekEnd,
+            });
 
             // Create one shift per required count; assign if an eligible employee exists
             for (let i = 0; i < requirement.requiredCount; i++) {
-              const employee = eligible[i] || null;
-
-              // Create a new shift
-              const shift = shiftRepo.create({
-                date,
-                period,
-                role: requirement.role,
-                assignedEmployeeId: employee?.id ?? null,
-                assignedEmployee: employee,
-                scheduleId,
-                explanation: employee
-                  ? `${employee.name} assigned — fewest hours this week among available ${requirement.role}s`
-                  : `Unfilled — no eligible ${requirement.role} available for ${period}`,
-              });
-              allShifts.push(shift);
+              allShifts.push(
+                buildShift(shiftRepo, {
+                  date,
+                  period,
+                  role: requirement.role,
+                  scheduleId,
+                  employee: eligible[i] || null,
+                })
+              );
             }
           }
         }
       }
 
       return shiftRepo.save(allShifts);
-    });
-  } finally {
-    generationLocks.delete(scheduleId);
-  }
+    })
+  );
 }
 
 /**
@@ -219,31 +300,11 @@ export async function generateSchedule(scheduleId: number): Promise<Shift[]> {
 export async function fillNewShifts(
   scheduleId: number
 ): Promise<{ added: number; filled: number; unfilled: number; kept: number }> {
-  if (generationLocks.has(scheduleId)) {
-    throw new Error("Schedule generation already in progress for this schedule.");
-  }
-  generationLocks.add(scheduleId);
-
-  try {
-    return await AppDataSource.transaction(async (manager) => {
+  return withGenerationLock(scheduleId, () =>
+    AppDataSource.transaction(async (manager) => {
       const shiftRepo = manager.getRepository(Shift);
-      const employeeRepo = manager.getRepository(Employee);
-      const requirementRepo = manager.getRepository(ScheduleRequirement);
-      const scheduleRepo = manager.getRepository(Schedule);
-
-      const schedule = await scheduleRepo.findOneOrFail({
-        where: { id: scheduleId },
-      });
+      const { schedule, employees, requirements } = await loadScheduleData(manager, scheduleId);
       const { startDate, endDate } = schedule;
-
-      const employees = await employeeRepo.find();
-      const requirements = await requirementRepo.find({ where: { scheduleId } });
-
-      if (requirements.length === 0) {
-        throw new Error(
-          "No requirements defined for this schedule. Please set requirements first."
-        );
-      }
 
       // Load existing shifts for this schedule
       const existingShifts = await shiftRepo.find({
@@ -252,22 +313,28 @@ export async function fillNewShifts(
       });
 
       const newShifts: Shift[] = [];
-      let kept = existingShifts.length;
+      const kept = existingShifts.length;
 
+      // Iterate through each date in the schedule range
       for (const date of eachDate(startDate, endDate)) {
         const dayOfWeek = new Date(date + "T00:00:00Z").getUTCDay();
         const { weekStart, weekEnd } = getWeekBounds(date);
 
+        // Get the existing shifts for the week
         const existingWeekShifts = await shiftRepo.find({
           where: { date: Between(weekStart, weekEnd) },
         });
+        // Combine the existing shifts with the new shifts
         const allShifts = [...existingWeekShifts, ...newShifts];
 
+        // Iterate through each period
         for (const period of PERIODS) {
+          // Get the requirements for the current day and period
           const dayRequirements = requirements.filter(
             (r) => r.dayOfWeek === dayOfWeek && r.period === period
           );
 
+          // Iterate through each requirement
           for (const requirement of dayRequirements) {
             // Count how many shifts already exist for this slot
             const existingForSlot = existingShifts.filter(
@@ -282,62 +349,33 @@ export async function fillNewShifts(
             if (needed <= 0) continue;
 
             // Find eligible employees (same logic as generateSchedule)
-            const eligible = employees
-              .filter((employee) => {
-                if (employee.role !== requirement.role) return false;
+            const eligible = findEligibleEmployees(employees, [...existingShifts, ...newShifts, ...allShifts], {
+              role: requirement.role,
+              date,
+              period,
+              weekStart,
+              weekEnd,
+            });
 
-                let availability: number[];
-                try {
-                  availability = JSON.parse(employee.availability);
-                } catch {
-                  return false;
-                }
-
-                if (!availability.includes(dayOfWeek)) return false;
-
-                const hours = countAssignedHours(
-                  allShifts,
-                  employee.id,
-                  weekStart,
-                  weekEnd
-                );
-                if (hours + HOURS_PER_SHIFT > employee.maxHoursPerWeek) return false;
-
-                const alreadyAssigned = [...existingShifts, ...newShifts].some(
-                  (s) =>
-                    s.date === date &&
-                    s.period === period &&
-                    s.assignedEmployeeId === employee.id
-                );
-                if (alreadyAssigned) return false;
-                return true;
-              })
-              .sort((a, b) => {
-                const hoursA = countAssignedHours(allShifts, a.id, weekStart, weekEnd);
-                const hoursB = countAssignedHours(allShifts, b.id, weekStart, weekEnd);
-                return hoursA - hoursB;
-              });
-
+            // Create the shifts
             for (let i = 0; i < needed; i++) {
-              const employee = eligible[i] || null;
-              const shift = shiftRepo.create({
-                date,
-                period,
-                role: requirement.role,
-                assignedEmployeeId: employee?.id ?? null,
-                assignedEmployee: employee,
-                scheduleId,
-                explanation: employee
-                  ? `${employee.name} assigned — fewest hours this week among available ${requirement.role}s`
-                  : `Unfilled — no eligible ${requirement.role} available for ${period}`,
-              });
-              newShifts.push(shift);
+              newShifts.push(
+                buildShift(shiftRepo, {
+                  date,
+                  period,
+                  role: requirement.role,
+                  scheduleId,
+                  employee: eligible[i] || null,
+                })
+              );
             }
           }
         }
       }
 
+      // Save the new shifts
       const saved = await shiftRepo.save(newShifts);
+      // Count the number of filled shifts
       const filled = saved.filter((s) => s.assignedEmployeeId).length;
 
       return {
@@ -346,10 +384,8 @@ export async function fillNewShifts(
         unfilled: saved.length - filled,
         kept,
       };
-    });
-  } finally {
-    generationLocks.delete(scheduleId);
-  }
+    })
+  );
 }
 
 /**
@@ -362,14 +398,13 @@ export async function replaceEmployee(
   excludeEmployeeIds: number[] = []
 ): Promise<Shift> {
   const shiftRepo = AppDataSource.getRepository(Shift);
-  const employeeRepo = AppDataSource.getRepository(Employee);
 
   const shift = await shiftRepo.findOneOrFail({ where: { id: shiftId } });
   const previousId = shift.assignedEmployeeId;
 
   // Create a list of employees to exclude
-  const toExclude = [...excludeEmployeeIds];
-  if (previousId) toExclude.push(previousId);
+  const excludeIds = [...excludeEmployeeIds];
+  if (previousId) excludeIds.push(previousId);
 
   // Get the week bounds
   const { weekStart, weekEnd } = getWeekBounds(shift.date);
@@ -377,43 +412,33 @@ export async function replaceEmployee(
     where: { date: Between(weekStart, weekEnd) },
   });
 
-  // Get the day of the week
-  const dayOfWeek = new Date(shift.date + "T00:00:00Z").getUTCDay();
-  const employees = await employeeRepo.find();
+  const employees = await AppDataSource.getRepository(Employee).find();
 
   // Filter eligible replacements: matching role, not excluded, available, under hour limit,
   // and not already working this same date+period
-  const eligible = employees
-    .filter((emp) => {
-      if (emp.role !== shift.role) return false;
-      if (toExclude.includes(emp.id)) return false;
-      const availability: number[] = JSON.parse(emp.availability);
-      if (!availability.includes(dayOfWeek)) return false;
-      const hours = countAssignedHours(weekShifts, emp.id, weekStart, weekEnd);
-      if (hours + HOURS_PER_SHIFT > emp.maxHoursPerWeek) return false;
-      const alreadyAssigned = weekShifts.some(
-        (s) =>
-          s.id !== shiftId &&
-          s.date === shift.date &&
-          s.period === shift.period &&
-          s.assignedEmployeeId === emp.id
-      );
-      if (alreadyAssigned) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const hoursA = countAssignedHours(weekShifts, a.id, weekStart, weekEnd);
-      const hoursB = countAssignedHours(weekShifts, b.id, weekStart, weekEnd);
-      return hoursA - hoursB;
-    });
+  const eligible = findEligibleEmployees(employees, weekShifts, {
+    role: shift.role,
+    date: shift.date,
+    period: shift.period,
+    weekStart,
+    weekEnd,
+    excludeIds,
+    excludeShiftId: shiftId,
+  });
 
+  // Get the replacement employee (the first eligible employee)
   const replacement = eligible[0] || null;
+
+  // Assign the replacement employee to the shift
   shift.assignedEmployeeId = replacement?.id ?? null;
   shift.assignedEmployee = replacement;
+
+  // Set the explanation for the shift
   shift.explanation = replacement
     ? `${replacement.name} replaced previous employee — fewest hours among eligible ${shift.role}s`
     : `Unfilled — no eligible replacement ${shift.role} available`;
 
+  // Save the shift
   return shiftRepo.save(shift);
 }
 
