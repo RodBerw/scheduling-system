@@ -18,7 +18,7 @@ Built as a response to the [AllieHealth Engineering Challenge](https://github.co
 | Frontend | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, TanStack React Query |
 | Backend | Express 4, TypeORM, SQL.js (SQLite) |
 | AI | OpenAI API (gpt-4o-mini) |
-| Testing | Playwright (E2E) |
+| Testing | Vitest (unit), Playwright (E2E) |
 | Monorepo | npm workspaces |
 
 ## Getting Started
