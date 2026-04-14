@@ -38,7 +38,7 @@ npm install
 cp apps/api/.env.example apps/api/.env
 # Edit apps/api/.env and add your OPENAI_API_KEY
 
-# Seed the database with sample data (22 employees, 4 schedules)
+# Seed the database with sample data (22 employees, 2 schedules)
 npm run seed
 
 # Start the app (API on :3001, Web on :3000)
@@ -51,14 +51,12 @@ Then open [http://localhost:3000](http://localhost:3000).
 
 The seed script creates a realistic restaurant scenario with **22 employees** across 4 roles (3 managers, 6 cooks, 8 waiters, 5 dishwashers), each with individual availability and weekly hour limits (20-40h).
 
-It also creates **4 schedules** of increasing complexity:
+It also creates **2 schedules**:
 
-| Schedule | Span | Staffing | State | Purpose |
-|----------|------|----------|-------|---------|
-| **Quiet Midweek** | 3 days | Low (1-2 per role) | Fully filled | Simple baseline — everything fits |
-| **Full Week** | 7 days | Moderate + weekend bump | Mostly filled, some gaps | Realistic week with minor conflicts |
-| **To Plan Week** | 7 days | Same as Full Week | No shifts generated | Ready to fill entirely via AI chat |
-| **Holiday Rush** | 14 days | High demand all periods | Many unfilled shifts | Stress test — staff can't cover everything |
+| Schedule | Span | State | Purpose |
+|----------|------|-------|---------|
+| **Full Week** | 7 days (Mon–Sun) | Requirements set, shifts generated | Explore an existing schedule — replace employees, tweak requirements, regenerate |
+| **Empty Week** | 7 days (Mon–Sun) | Completely blank | Build a schedule from scratch entirely via AI chat |
 
 ## How It Works
 
@@ -90,13 +88,59 @@ The backend runs a **tool loop**: send messages → receive tool calls → execu
 
 ### Example Prompts
 
-> "We need 2 cooks and 3 waiters every weekday morning"
+All prompts below have been tested end-to-end against the seeded data. Try them on the **Full Week** schedule or build from scratch on the **Empty Week**.
 
-> "Generate the schedule"
+**Getting information**
 
-> "Replace Camila on all her Friday shifts"
+> "Give me an overview of this schedule. How many shifts are filled vs unfilled?"
 
-> "What does next Monday look like?"
+> "What does Monday look like? List who is working each shift period."
+
+> "Are there any unfilled shifts? Which roles are hardest to fill?"
+
+> "Do we have enough coverage for the weekend? Summarize Saturday and Sunday staffing."
+
+**Setting requirements**
+
+> "I need 3 cooks, 4 waiters, 1 manager, and 2 dishwashers for every weekday morning shift"
+
+> "For Saturday and Sunday, set 2 cooks, 5 waiters, 1 manager, and 1 dishwasher for both morning and evening"
+
+> "Add 5 waiters on weekend evenings"
+
+> "Remove all dishwasher requirements from Sunday"
+
+> "Change Monday morning to 3 cooks and 2 waiters"
+
+**Generating and managing shifts**
+
+> "Now generate the full schedule based on these requirements"
+
+> "Regenerate the entire schedule"
+
+> "Delete all Thursday evening shifts"
+
+> "Delete all cook shifts from Wednesday"
+
+**Employee assignment**
+
+> "Replace the first cook on Wednesday morning with someone else"
+
+> "Replace Brandon on all their shifts"
+
+> "Unassign whoever is working the first Tuesday morning cook shift"
+
+> "Assign the first available cook to an unfilled shift"
+
+**Multi-step requests**
+
+> "Set Friday evening to 2 managers, 4 cooks, 6 waiters, 3 dishwashers, then regenerate just Friday's schedule"
+
+> "Set requirements: 1 cook for Monday morning, then generate the schedule"
+
+**Edge cases** — the AI asks for clarification instead of guessing:
+
+> "We need more staff on the busiest day"
 
 ## Project Structure
 

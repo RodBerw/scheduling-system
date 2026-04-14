@@ -83,55 +83,19 @@ async function seed() {
   };
 
   // ============================================================
-  // Schedule 1 — "Quiet Midweek" (Complexity 1)
-  //   3 days (Wed–Fri), minimal staffing, pre-filled with shifts
+  // Schedule 1 — "Full Week"
+  //   7 days (Mon–Sun), moderate staffing with weekend bump,
+  //   pre-filled with shifts
   // ============================================================
-  const s1Start = addDays(thisMonday, 2); // Wednesday
-  const s1End = addDays(thisMonday, 4);   // Friday
+  const s1Start = addDays(thisMonday, 7);  // Next Monday
+  const s1End = addDays(thisMonday, 13);   // Next Sunday
 
   const schedule1 = await scheduleRepo.save(
-    scheduleRepo.create({ name: "Quiet Midweek", startDate: fmt(s1Start), endDate: fmt(s1End) }),
+    scheduleRepo.create({ name: "Full Week", startDate: fmt(s1Start), endDate: fmt(s1End) }),
   );
   console.log(`Created schedule: "${schedule1.name}" (${schedule1.startDate} to ${schedule1.endDate})`);
 
   type ReqTemplate = { role: "manager" | "cook" | "waiter" | "dishwasher"; morning: number; afternoon: number; evening: number };
-
-  const s1Reqs: ReqTemplate[] = [
-    { role: "manager",    morning: 1, afternoon: 1, evening: 1 },
-    { role: "cook",       morning: 1, afternoon: 1, evening: 1 },
-    { role: "waiter",     morning: 1, afternoon: 1, evening: 2 },
-    { role: "dishwasher", morning: 1, afternoon: 1, evening: 1 },
-  ];
-
-  {
-    const requirements: Partial<ScheduleRequirement>[] = [];
-    for (let dayOfWeek = 3; dayOfWeek <= 5; dayOfWeek++) { // Wed(3), Thu(4), Fri(5)
-      for (const req of s1Reqs) {
-        for (const period of ["morning", "afternoon", "evening"] as const) {
-          requirements.push({ dayOfWeek, role: req.role, period, requiredCount: req[period], scheduleId: schedule1.id });
-        }
-      }
-    }
-    await reqRepo.save(requirements.map((r) => reqRepo.create(r)));
-    console.log(`  Added ${requirements.length} requirements to "${schedule1.name}"`);
-  }
-
-  const s1Shifts = await generateSchedule(schedule1.id);
-  const s1Filled = s1Shifts.filter((s) => s.assignedEmployeeId).length;
-  console.log(`  Generated ${s1Shifts.length} shifts (${s1Filled} filled, ${s1Shifts.length - s1Filled} unfilled)`);
-
-  // ============================================================
-  // Schedule 2 — "Full Week" (Complexity 2)
-  //   7 days (Mon–Sun), moderate staffing with weekend bump,
-  //   pre-filled with shifts
-  // ============================================================
-  const s2Start = addDays(thisMonday, 7);  // Next Monday
-  const s2End = addDays(thisMonday, 13);   // Next Sunday
-
-  const schedule2 = await scheduleRepo.save(
-    scheduleRepo.create({ name: "Full Week", startDate: fmt(s2Start), endDate: fmt(s2End) }),
-  );
-  console.log(`Created schedule: "${schedule2.name}" (${schedule2.startDate} to ${schedule2.endDate})`);
 
   const weekdayReqs: ReqTemplate[] = [
     { role: "manager",    morning: 1, afternoon: 1, evening: 1 },
@@ -154,93 +118,31 @@ async function seed() {
       const template = isWeekend ? weekendReqs : weekdayReqs;
       for (const req of template) {
         for (const period of ["morning", "afternoon", "evening"] as const) {
-          requirements.push({ dayOfWeek, role: req.role, period, requiredCount: req[period], scheduleId: schedule2.id });
+          requirements.push({ dayOfWeek, role: req.role, period, requiredCount: req[period], scheduleId: schedule1.id });
         }
       }
     }
     await reqRepo.save(requirements.map((r) => reqRepo.create(r)));
-    console.log(`  Added ${requirements.length} requirements to "${schedule2.name}"`);
+    console.log(`  Added ${requirements.length} requirements to "${schedule1.name}"`);
   }
 
-  const s2Shifts = await generateSchedule(schedule2.id);
-  const s2Filled = s2Shifts.filter((s) => s.assignedEmployeeId).length;
-  console.log(`  Generated ${s2Shifts.length} shifts (${s2Filled} filled, ${s2Shifts.length - s2Filled} unfilled)`);
+  const s1Shifts = await generateSchedule(schedule1.id);
+  const s1Filled = s1Shifts.filter((s) => s.assignedEmployeeId).length;
+  console.log(`  Generated ${s1Shifts.length} shifts (${s1Filled} filled, ${s1Shifts.length - s1Filled} unfilled)`);
 
   // ============================================================
-  // Schedule 3 — "To Plan Week" (Complexity 2)
-  //   7 days (Mon–Sun), same moderate staffing,
-  //   requirements set but NO shifts generated (ready to fill via chat)
+  // Schedule 2 — "Empty Week"
+  //   7 days (Mon–Sun), no requirements, no shifts.
+  //   A blank slate to build entirely via AI chat.
   // ============================================================
-  const s3Start = addDays(thisMonday, 14); // Two weeks out (Monday)
-  const s3End = addDays(thisMonday, 20);   // Two weeks out (Sunday)
+  const s2Start = addDays(thisMonday, 14); // Two weeks out (Monday)
+  const s2End = addDays(thisMonday, 20);   // Two weeks out (Sunday)
 
-  const schedule3 = await scheduleRepo.save(
-    scheduleRepo.create({ name: "To Plan Week", startDate: fmt(s3Start), endDate: fmt(s3End) }),
+  const schedule2 = await scheduleRepo.save(
+    scheduleRepo.create({ name: "Empty Week", startDate: fmt(s2Start), endDate: fmt(s2End) }),
   );
-  console.log(`Created schedule: "${schedule3.name}" (${schedule3.startDate} to ${schedule3.endDate})`);
-
-  {
-    const requirements: Partial<ScheduleRequirement>[] = [];
-    for (let dayOfWeek = 0; dayOfWeek <= 6; dayOfWeek++) {
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      const template = isWeekend ? weekendReqs : weekdayReqs;
-      for (const req of template) {
-        for (const period of ["morning", "afternoon", "evening"] as const) {
-          requirements.push({ dayOfWeek, role: req.role, period, requiredCount: req[period], scheduleId: schedule3.id });
-        }
-      }
-    }
-    await reqRepo.save(requirements.map((r) => reqRepo.create(r)));
-    console.log(`  Added ${requirements.length} requirements to "${schedule3.name}"`);
-  }
-
-  console.log(`  No shifts generated — ready to fill via chat`);
-
-  // ============================================================
-  // Schedule 4 — "Holiday Rush" (Complexity 3)
-  //   14 days, high staffing demands across all periods,
-  //   pre-filled — expect some unfilled shifts due to staff limits
-  // ============================================================
-  const s4Start = addDays(thisMonday, 21); // Three weeks out (Monday)
-  const s4End = addDays(thisMonday, 34);   // Two weeks later (Sunday)
-
-  const schedule4 = await scheduleRepo.save(
-    scheduleRepo.create({ name: "Holiday Rush", startDate: fmt(s4Start), endDate: fmt(s4End) }),
-  );
-  console.log(`Created schedule: "${schedule4.name}" (${schedule4.startDate} to ${schedule4.endDate})`);
-
-  const rushWeekdayReqs: ReqTemplate[] = [
-    { role: "manager",    morning: 1, afternoon: 1, evening: 2 },
-    { role: "cook",       morning: 3, afternoon: 3, evening: 4 },
-    { role: "waiter",     morning: 3, afternoon: 4, evening: 5 },
-    { role: "dishwasher", morning: 2, afternoon: 2, evening: 3 },
-  ];
-
-  const rushWeekendReqs: ReqTemplate[] = [
-    { role: "manager",    morning: 2, afternoon: 2, evening: 2 },
-    { role: "cook",       morning: 4, afternoon: 4, evening: 5 },
-    { role: "waiter",     morning: 4, afternoon: 5, evening: 6 },
-    { role: "dishwasher", morning: 2, afternoon: 3, evening: 3 },
-  ];
-
-  {
-    const requirements: Partial<ScheduleRequirement>[] = [];
-    for (let dayOfWeek = 0; dayOfWeek <= 6; dayOfWeek++) {
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      const template = isWeekend ? rushWeekendReqs : rushWeekdayReqs;
-      for (const req of template) {
-        for (const period of ["morning", "afternoon", "evening"] as const) {
-          requirements.push({ dayOfWeek, role: req.role, period, requiredCount: req[period], scheduleId: schedule4.id });
-        }
-      }
-    }
-    await reqRepo.save(requirements.map((r) => reqRepo.create(r)));
-    console.log(`  Added ${requirements.length} requirements to "${schedule4.name}"`);
-  }
-
-  const s4Shifts = await generateSchedule(schedule4.id);
-  const s4Filled = s4Shifts.filter((s) => s.assignedEmployeeId).length;
-  console.log(`  Generated ${s4Shifts.length} shifts (${s4Filled} filled, ${s4Shifts.length - s4Filled} unfilled)`);
+  console.log(`Created schedule: "${schedule2.name}" (${schedule2.startDate} to ${schedule2.endDate})`);
+  console.log(`  No requirements or shifts — build from scratch via chat`);
 
   await AppDataSource.destroy();
   console.log("\nSeed complete!");
