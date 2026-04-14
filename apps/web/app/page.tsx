@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { getSchedules, createSchedule, deleteSchedule } from "@/services/scheduleService";
+import { useSchedules, useCreateSchedule, useDeleteSchedule } from "@/hooks/use-schedules";
 import type { Schedule } from "@/lib/types";
 import {
   CalendarDays,
@@ -40,32 +40,15 @@ function getDefaultDates() {
 
 export default function Home() {
   const router = useRouter();
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: schedules = [], isLoading: loading, error } = useSchedules();
+  const createMutation = useCreateSchedule();
+  const deleteMutation = useDeleteSchedule();
+
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<Schedule | null>(null);
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const fetchSchedules = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setSchedules(await getSchedules());
-    } catch {
-      setError("Failed to load schedules. Is the API server running?");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSchedules();
-  }, []);
 
   const handleCreate = async () => {
     if (!name || !startDate || !endDate) return;
@@ -73,9 +56,8 @@ export default function Home() {
       toast.error("End date must be on or after start date");
       return;
     }
-    setCreating(true);
     try {
-      const s = await createSchedule(name, startDate, endDate);
+      const s = await createMutation.mutateAsync({ name, startDate, endDate });
       setCreateOpen(false);
       setName("");
       toast.success("Schedule created successfully");
@@ -86,22 +68,16 @@ export default function Home() {
           ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
           : null;
       toast.error(msg || "Failed to create schedule. Please try again.");
-    } finally {
-      setCreating(false);
     }
   };
 
   const handleDelete = async (id: number) => {
-    setDeleting(true);
     try {
-      await deleteSchedule(id);
+      await deleteMutation.mutateAsync(id);
       setDeleteConfirm(null);
       toast.success("Schedule deleted");
-      fetchSchedules();
     } catch {
       toast.error("Failed to delete schedule. Please try again.");
-    } finally {
-      setDeleting(false);
     }
   };
 
@@ -151,10 +127,7 @@ export default function Home() {
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center justify-between gap-2">
-            <span>{error}</span>
-            <Button variant="ghost" size="sm" onClick={() => setError(null)} className="text-destructive h-7 px-2 shrink-0 cursor-pointer">
-              Dismiss
-            </Button>
+            <span>Failed to load schedules. Is the API server running?</span>
           </div>
         )}
 
@@ -163,7 +136,7 @@ export default function Home() {
             <div className="w-10 h-10 border-3 border-primary/30 border-t-primary rounded-full animate-spin mb-3" aria-hidden="true" />
             <p className="text-sm">Loading schedules...</p>
           </div>
-        ) : schedules.length === 0 ? (
+        ) : schedules.length === 0 && !error ? (
           <div className="text-center py-16 sm:py-20">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <CalendarPlus className="w-8 h-8 text-primary/60" />
@@ -332,8 +305,8 @@ export default function Home() {
                 <Input id="end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             </div>
-            <Button onClick={handleCreate} disabled={creating || !name || !startDate || !endDate} className="w-full cursor-pointer">
-              {creating ? "Creating..." : "Create Schedule"}
+            <Button onClick={handleCreate} disabled={createMutation.isPending || !name || !startDate || !endDate} className="w-full cursor-pointer">
+              {createMutation.isPending ? "Creating..." : "Create Schedule"}
             </Button>
           </div>
         </DialogContent>
@@ -352,16 +325,16 @@ export default function Home() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)} disabled={deleting} className="cursor-pointer">
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)} disabled={deleteMutation.isPending} className="cursor-pointer">
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={() => deleteConfirm && handleDelete(deleteConfirm.id)}
-              disabled={deleting}
+              disabled={deleteMutation.isPending}
               className="cursor-pointer"
             >
-              {deleting ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
           </div>
         </DialogContent>

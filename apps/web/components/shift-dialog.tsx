@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,8 +9,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getEligibleEmployees, assignEmployee, replaceShift } from "@/services/shiftService";
-import type { Shift, Employee } from "@/lib/types";
+import { useEligibleEmployees, useAssignEmployee, useReplaceShift } from "@/hooks/use-shifts";
+import type { Shift } from "@/lib/types";
 import { RefreshCw, UserMinus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,32 +20,22 @@ const ROLE_DOT = { manager: "bg-violet-500", cook: "bg-amber-500", waiter: "bg-s
 
 interface ShiftDialogProps {
   shift: Shift | null;
+  scheduleId: number;
   onClose: () => void;
   onChanged: () => void;
 }
 
-export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
-  const [eligible, setEligible] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
+export function ShiftDialog({ shift, scheduleId, onClose, onChanged }: ShiftDialogProps) {
+  const { data: eligible = [], isLoading: loading } = useEligibleEmployees(shift?.id ?? null);
+  const assignMutation = useAssignEmployee(scheduleId);
+  const replaceMutation = useReplaceShift(scheduleId);
 
-  useEffect(() => {
-    if (!shift) return;
-    setLoading(true);
-    getEligibleEmployees(shift.id)
-      .then(setEligible)
-      .catch(() => {
-        setEligible([]);
-        toast.error("Failed to load eligible employees");
-      })
-      .finally(() => setLoading(false));
-  }, [shift]);
+  const actionLoading = assignMutation.isPending || replaceMutation.isPending;
 
   const handleAssign = async (employeeId: number) => {
     if (!shift) return;
-    setActionLoading(true);
     try {
-      await assignEmployee(shift.id, employeeId);
+      await assignMutation.mutateAsync({ shiftId: shift.id, employeeId });
       toast.success("Employee assigned successfully");
       onChanged();
       onClose();
@@ -56,16 +45,13 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
           ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
           : null;
       toast.error(msg || "Failed to assign employee. Please try again.");
-    } finally {
-      setActionLoading(false);
     }
   };
 
   const handleAutoReplace = async () => {
     if (!shift) return;
-    setActionLoading(true);
     try {
-      await replaceShift(shift.id);
+      await replaceMutation.mutateAsync(shift.id);
       toast.success("Employee replaced successfully");
       onChanged();
       onClose();
@@ -75,23 +61,18 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
           ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
           : null;
       toast.error(msg || "Failed to find a replacement. Please try again.");
-    } finally {
-      setActionLoading(false);
     }
   };
 
   const handleUnassign = async () => {
     if (!shift) return;
-    setActionLoading(true);
     try {
-      await assignEmployee(shift.id, null);
+      await assignMutation.mutateAsync({ shiftId: shift.id, employeeId: null });
       toast.success("Employee removed from shift");
       onChanged();
       onClose();
     } catch {
       toast.error("Failed to unassign employee. Please try again.");
-    } finally {
-      setActionLoading(false);
     }
   };
 

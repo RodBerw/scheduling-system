@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { sendChatMessage } from "@/services/chatService";
+import { useSendChatMessage } from "@/hooks/use-chat";
 import type { ChatMessage } from "@/lib/types";
 import { Send, Bot, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -40,13 +40,13 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
     },
   ]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const chatMutation = useSendChatMessage(scheduleId);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, chatMutation.isPending]);
 
   const focusInput = useCallback(() => {
     setTimeout(() => inputRef.current?.focus(), 50);
@@ -54,16 +54,15 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
 
   const handleSend = async (text?: string) => {
     const msg = (text || input).trim();
-    if (!msg || loading) return;
+    if (!msg || chatMutation.isPending) return;
 
     const userMsg: ChatMessageWithId = { id: nextMsgId(), role: "user", content: msg };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
-    setLoading(true);
 
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
-      const res = await sendChatMessage(msg, history, scheduleId);
+      const res = await chatMutation.mutateAsync({ message: msg, history });
       setMessages((prev) => [...prev, { id: nextMsgId(), role: "assistant", content: res.reply }]);
       if (res.actions?.length > 0) {
         onScheduleChange();
@@ -75,7 +74,6 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
         { id: nextMsgId(), role: "assistant", content: "Something went wrong. Please try again." },
       ]);
     } finally {
-      setLoading(false);
       focusInput();
     }
   };
@@ -149,7 +147,7 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
             </div>
           </div>
         ))}
-        {loading && (
+        {chatMutation.isPending && (
           <div className="flex justify-start" role="status" aria-live="polite">
             <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
               <div className="flex gap-1.5">
@@ -188,14 +186,14 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
-            disabled={loading}
+            disabled={chatMutation.isPending}
             rows={1}
             aria-label="Chat message"
             className="flex-1 bg-transparent resize-none text-sm outline-none py-1.5 max-h-20 placeholder:text-muted-foreground/60"
           />
           <Button
             onClick={() => handleSend()}
-            disabled={loading || !input.trim()}
+            disabled={chatMutation.isPending || !input.trim()}
             size="sm"
             className="rounded-lg h-8 w-8 p-0 shrink-0 cursor-pointer"
             aria-label="Send message"

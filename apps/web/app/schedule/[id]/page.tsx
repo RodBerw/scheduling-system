@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScheduleGrid } from "@/components/schedule-grid";
 import { ChatPanel } from "@/components/chat-panel";
 import { ShiftDialog } from "@/components/shift-dialog";
-import { getSchedule, getRequirements } from "@/services/scheduleService";
-import { getShifts, generateShifts } from "@/services/shiftService";
-import type { Schedule, Shift, ScheduleRequirement } from "@/lib/types";
+import { useSchedule, useRequirements, scheduleKeys } from "@/hooks/use-schedules";
+import { useShifts, useGenerateShifts, shiftKeys } from "@/hooks/use-shifts";
+import type { Shift } from "@/lib/types";
 import {
   ArrowLeft,
   CalendarDays,
@@ -23,100 +24,48 @@ import { toast } from "sonner";
 export default function ScheduleDetail() {
   const params = useParams();
   const scheduleId = parseInt(params.id as string);
+  const queryClient = useQueryClient();
 
-  const [schedule, setSchedule] = useState<Schedule | null>(null);
-  const [shifts, setShifts] = useState<Shift[]>([]);
-  const [requirements, setRequirements] = useState<ScheduleRequirement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: schedule, isLoading: scheduleLoading, error: scheduleError } = useSchedule(scheduleId);
+  const { data: shifts = [], dataUpdatedAt: shiftsUpdatedAt } = useShifts(scheduleId);
+  const { data: requirements = [] } = useRequirements(scheduleId);
+  const generateMutation = useGenerateShifts(scheduleId);
+
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [changedShiftIds, setChangedShiftIds] = useState<Set<number>>(new Set());
+  const prevShiftsRef = useRef<Shift[]>([]);
 
-  const fetchData = useCallback(async (isRefetch = false) => {
-    if (isNaN(scheduleId)) return;
-    if (!isRefetch) {
-      setLoading(true);
-      setError(null);
-    }
-
-    try {
-
-      // Fetch schedule, shifts, and requirements
-      const [s, sh, req] = await Promise.all([
-        getSchedule(scheduleId),
-        getShifts(scheduleId),
-        getRequirements(scheduleId),
-      ]);
-
-      // If refetching, detect changed shifts and requirements
-      if (isRefetch) {
-        // Detect changed shifts
-        setShifts((prev) => {
-          const prevMap = new Map(prev.map((p) => [p.id, p]));
-          const changed = new Set<number>();
-          for (const shift of sh) {
-            const old = prevMap.get(shift.id);
-            if (!old || JSON.stringify(old) !== JSON.stringify(shift)) {
-              changed.add(shift.id);
-            }
-          }
-          // Also detect new shifts (ids not in prev)
-          for (const shift of sh) {
-            if (!prevMap.has(shift.id)) changed.add(shift.id);
-          }
-          if (changed.size > 0) {
-            // Update changed shift ids
-            setChangedShiftIds(changed);
-            setTimeout(() => setChangedShiftIds(new Set()), 2000);
-          }
-          return sh;
-        });
-
-        // Detect changed requirements
-        setRequirements((prev) => {
-          const prevMap = new Map(prev.map((p) => [p.id, p]));
-          const changed = new Set<number>();
-          for (const r of req) {
-            const old = prevMap.get(r.id);
-            if (!old || JSON.stringify(old) !== JSON.stringify(r)) {
-              changed.add(r.id);
-            }
-          }
-
-          return req;
-        });
-        setSchedule(s);
-      } else {
-        setSchedule(s);
-        setShifts(sh);
-        setRequirements(req);
-      }
-    } catch {
-      if (!isRefetch) {
-        setError("Failed to load schedule data. Is the API server running?");
-      }
-    } finally {
-      if (!isRefetch) {
-        setLoading(false);
-      }
-    }
-  }, [scheduleId]);
-
+  // Detect changed shifts when data updates
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const prev = prevShiftsRef.current;
+    if (prev.length > 0 && shifts.length > 0) {
+      const prevMap = new Map(prev.map((p) => [p.id, p]));
+      const changed = new Set<number>();
+      for (const shift of shifts) {
+        const old = prevMap.get(shift.id);
+        if (!old || JSON.stringify(old) !== JSON.stringify(shift)) {
+          changed.add(shift.id);
+        }
+      }
+      for (const shift of shifts) {
+        if (!prevMap.has(shift.id)) changed.add(shift.id);
+      }
+      if (changed.size > 0) {
+        setChangedShiftIds(changed);
+        setTimeout(() => setChangedShiftIds(new Set()), 2000);
+      }
+    }
+    prevShiftsRef.current = shifts;
+  }, [shiftsUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerate = async () => {
     if (requirements.length === 0) {
       toast.error("Set requirements first via the AI chat before generating shifts");
       return;
     }
-    setGenerating(true);
     try {
-      await generateShifts(scheduleId);
-      await fetchData(true);
+      await generateMutation.mutateAsync();
       toast.success("Shifts generated successfully");
     } catch (err: unknown) {
       const msg =
@@ -124,9 +73,13 @@ export default function ScheduleDetail() {
           ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
           : null;
       toast.error(msg || "Failed to generate shifts. Please try again.");
-    } finally {
-      setGenerating(false);
     }
+  };
+
+  const handleScheduleChange = () => {
+    queryClient.invalidateQueries({ queryKey: shiftKeys.list(scheduleId) });
+    queryClient.invalidateQueries({ queryKey: scheduleKeys.detail(scheduleId) });
+    queryClient.invalidateQueries({ queryKey: scheduleKeys.requirements(scheduleId) });
   };
 
   const handleShiftClick = (shiftId: number) => {
@@ -151,7 +104,7 @@ export default function ScheduleDetail() {
     );
   }
 
-  if (loading) {
+  if (scheduleLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen text-muted-foreground" role="status" aria-live="polite">
         <div className="w-10 h-10 border-3 border-primary/30 border-t-primary rounded-full animate-spin mb-3" aria-hidden="true" />
@@ -160,11 +113,11 @@ export default function ScheduleDetail() {
     );
   }
 
-  if (error || !schedule) {
+  if (scheduleError || !schedule) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <p className="text-destructive">{error || "Schedule not found"}</p>
-        <Button variant="outline" onClick={() => fetchData()} className="cursor-pointer">Retry</Button>
+        <p className="text-destructive">{scheduleError ? "Failed to load schedule data. Is the API server running?" : "Schedule not found"}</p>
+        <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: scheduleKeys.detail(scheduleId) })} className="cursor-pointer">Retry</Button>
       </div>
     );
   }
@@ -213,26 +166,26 @@ export default function ScheduleDetail() {
                 variant="outline"
                 size="sm"
                 onClick={handleGenerate}
-                disabled={generating || requirements.length === 0}
+                disabled={generateMutation.isPending || requirements.length === 0}
                 className="h-8 sm:h-9 gap-1.5 text-xs cursor-pointer"
                 title={
                   requirements.length === 0
                     ? "Set requirements first via chat"
-                    : generating
+                    : generateMutation.isPending
                       ? "Generating shifts..."
                       : ""
                 }
               >
-                {generating ? (
+                {generateMutation.isPending ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
                 <span className="hidden sm:inline">
-                  {generating ? "Generating..." : shifts.length > 0 ? "Smart Fill" : "Generate Shifts"}
+                  {generateMutation.isPending ? "Generating..." : shifts.length > 0 ? "Smart Fill" : "Generate Shifts"}
                 </span>
                 <span className="sm:hidden">
-                  {generating ? "..." : "Generate"}
+                  {generateMutation.isPending ? "..." : "Generate"}
                 </span>
               </Button>
               {/* Mobile chat toggle */}
@@ -299,13 +252,13 @@ export default function ScheduleDetail() {
 
           {/* Chat - Desktop (always visible) */}
           <div className="hidden lg:block w-[360px] flex-shrink-0">
-            <ChatPanel scheduleId={scheduleId} onScheduleChange={() => fetchData(true)} />
+            <ChatPanel scheduleId={scheduleId} onScheduleChange={handleScheduleChange} />
           </div>
 
           {/* Chat - Mobile (overlay) */}
           {chatOpen && (
             <div className="lg:hidden absolute inset-0 z-40 bg-background flex flex-col">
-              <ChatPanel scheduleId={scheduleId} onScheduleChange={() => fetchData(true)} />
+              <ChatPanel scheduleId={scheduleId} onScheduleChange={handleScheduleChange} />
             </div>
           )}
         </div>
@@ -313,8 +266,9 @@ export default function ScheduleDetail() {
         {/* Shift dialog */}
         <ShiftDialog
           shift={selectedShift}
+          scheduleId={scheduleId}
           onClose={() => setSelectedShift(null)}
-          onChanged={() => fetchData(true)}
+          onChanged={handleScheduleChange}
         />
       </div>
     </TooltipProvider>
