@@ -8,17 +8,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScheduleGrid } from "@/components/schedule-grid";
 import { ChatPanel } from "@/components/chat-panel";
 import { ShiftDialog } from "@/components/shift-dialog";
+import { ScheduleHeader } from "@/components/schedule-header";
+import { RoleLegend } from "@/components/role-legend";
 import { useSchedule, useRequirements, scheduleKeys } from "@/hooks/use-schedules";
 import { useShifts, useGenerateShifts, shiftKeys } from "@/hooks/use-shifts";
 import type { Shift } from "@/lib/types";
-import {
-  ArrowLeft,
-  CalendarDays,
-  MessageSquare,
-  X,
-  Sparkles,
-  RefreshCw,
-} from "lucide-react";
 import { toast } from "sonner";
 
 export default function ScheduleDetail() {
@@ -90,12 +84,6 @@ export default function ScheduleDetail() {
   const filledCount = shifts.filter((s) => s.assignedEmployeeId).length;
   const unfilledCount = shifts.length - filledCount;
 
-  const formatRange = (start: string, end: string) => {
-    const s = new Date(start + "T00:00:00Z");
-    const e = new Date(end + "T00:00:00Z");
-    return `${s.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })} - ${e.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`;
-  };
-
   if (isNaN(scheduleId)) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -125,115 +113,25 @@ export default function ScheduleDetail() {
   return (
     <TooltipProvider delay={200}>
       <div className="h-screen flex flex-col">
-        {/* Header */}
-        <header className="flex-shrink-0 bg-card/80 backdrop-blur-sm border-b z-30">
-          <div className="flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3 gap-2">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <a
-                href="/"
-                className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors text-sm shrink-0 cursor-pointer"
-                aria-label="Back to schedules"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Schedules</span>
-              </a>
-              <div className="w-px h-5 bg-border hidden sm:block" />
-              <div className="min-w-0">
-                <h1 className="font-semibold text-sm leading-tight truncate">{schedule.name}</h1>
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <CalendarDays className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{formatRange(schedule.startDate, schedule.endDate)}</span>
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {shifts.length > 0 && (
-                <div className="hidden sm:flex items-center gap-3 mr-1 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" />
-                    {filledCount} filled
-                  </span>
-                  {unfilledCount > 0 && (
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-amber-400" aria-hidden="true" />
-                      {unfilledCount} open
-                    </span>
-                  )}
-                </div>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleGenerate}
-                disabled={generateMutation.isPending || requirements.length === 0}
-                className="h-8 sm:h-9 gap-1.5 text-xs cursor-pointer"
-                title={
-                  requirements.length === 0
-                    ? "Set requirements first via chat"
-                    : generateMutation.isPending
-                      ? "Generating shifts..."
-                      : ""
-                }
-              >
-                {generateMutation.isPending ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5" />
-                )}
-                <span className="hidden sm:inline">
-                  {generateMutation.isPending ? "Generating..." : shifts.length > 0 ? "Smart Fill" : "Generate Shifts"}
-                </span>
-                <span className="sm:hidden">
-                  {generateMutation.isPending ? "..." : "Generate"}
-                </span>
-              </Button>
-              {/* Mobile chat toggle */}
-              <Button
-                variant={chatOpen ? "default" : "outline"}
-                size="sm"
-                onClick={() => setChatOpen(!chatOpen)}
-                className="lg:hidden h-8 sm:h-9 w-8 sm:w-9 p-0 cursor-pointer"
-                aria-label={chatOpen ? "Close chat" : "Open AI assistant"}
-              >
-                {chatOpen ? <X className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
-              </Button>
-            </div>
-          </div>
-          {/* Mobile stats bar */}
-          {shifts.length > 0 && (
-            <div className="flex sm:hidden items-center gap-3 px-3 py-1.5 border-t text-xs text-muted-foreground bg-muted/30">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" />
-                {filledCount} filled
-              </span>
-              {unfilledCount > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-400" aria-hidden="true" />
-                  {unfilledCount} open
-                </span>
-              )}
-            </div>
-          )}
-        </header>
+        <ScheduleHeader
+          name={schedule.name}
+          startDate={schedule.startDate}
+          endDate={schedule.endDate}
+          filledCount={filledCount}
+          unfilledCount={unfilledCount}
+          hasShifts={shifts.length > 0}
+          hasRequirements={requirements.length > 0}
+          isGenerating={generateMutation.isPending}
+          chatOpen={chatOpen}
+          onGenerate={handleGenerate}
+          onToggleChat={() => setChatOpen(!chatOpen)}
+        />
 
         {/* Main: Grid + Chat */}
         <div className="flex-1 flex min-h-0 relative">
           {/* Schedule area */}
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {/* Legend */}
-            <div className="flex items-center justify-between px-3 sm:px-6 py-2 border-b bg-muted/30 text-xs text-muted-foreground flex-shrink-0 overflow-x-auto">
-              <div className="flex items-center gap-3 sm:gap-5">
-                <span className="font-medium shrink-0">Roles</span>
-                <span className="flex items-center gap-1.5 shrink-0"><span className="w-2 h-2 rounded-full bg-violet-500" aria-hidden="true" /> Manager</span>
-                <span className="flex items-center gap-1.5 shrink-0"><span className="w-2 h-2 rounded-full bg-amber-500" aria-hidden="true" /> Cook</span>
-                <span className="flex items-center gap-1.5 shrink-0"><span className="w-2 h-2 rounded-full bg-sky-500" aria-hidden="true" /> Waiter</span>
-                <span className="flex items-center gap-1.5 shrink-0"><span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" /> Dishwasher</span>
-              </div>
-              {requirements.length > 0 && (
-                <span className="shrink-0 hidden sm:inline">{requirements.length} staffing rules active</span>
-              )}
-            </div>
+            <RoleLegend activeRulesCount={requirements.length} />
 
             {/* Grid */}
             <div className="flex-1 overflow-auto p-2 sm:p-4">
@@ -263,7 +161,6 @@ export default function ScheduleDetail() {
           )}
         </div>
 
-        {/* Shift dialog */}
         <ShiftDialog
           shift={selectedShift}
           scheduleId={scheduleId}

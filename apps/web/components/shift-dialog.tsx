@@ -10,13 +10,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useEligibleEmployees, useAssignEmployee, useReplaceShift } from "@/hooks/use-shifts";
+import { ROLE_CONFIG, ROLE_LABELS, PERIOD_LABELS } from "@/lib/constants";
+import { formatDate } from "@/lib/date-utils";
 import type { Shift } from "@/lib/types";
 import { RefreshCw, UserMinus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-
-const PERIOD_LABELS = { morning: "Morning", afternoon: "Afternoon", evening: "Evening" };
-const ROLE_LABELS = { manager: "Manager", cook: "Cook", waiter: "Waiter", dishwasher: "Dishwasher" };
-const ROLE_DOT = { manager: "bg-violet-500", cook: "bg-amber-500", waiter: "bg-sky-500", dishwasher: "bg-emerald-500" };
 
 interface ShiftDialogProps {
   shift: Shift | null;
@@ -76,11 +74,6 @@ export function ShiftDialog({ shift, scheduleId, onClose, onChanged }: ShiftDial
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr + "T00:00:00Z");
-    return d.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
-  };
-
   if (!shift) return null;
 
   const others = eligible.filter((e) => e.id !== shift.assignedEmployeeId);
@@ -90,7 +83,7 @@ export function ShiftDialog({ shift, scheduleId, onClose, onChanged }: ShiftDial
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${ROLE_DOT[shift.role]}`} aria-hidden="true" />
+            <span className={`w-2.5 h-2.5 rounded-full ${ROLE_CONFIG[shift.role].dot}`} aria-hidden="true" />
             {ROLE_LABELS[shift.role]} Shift
           </DialogTitle>
           <DialogDescription>

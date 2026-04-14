@@ -3,40 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { SummaryStats } from "@/components/summary-stats";
+import { ScheduleCard } from "@/components/schedule-card";
+import { CreateScheduleDialog } from "@/components/create-schedule-dialog";
+import { DeleteScheduleDialog } from "@/components/delete-schedule-dialog";
 import { useSchedules, useCreateSchedule, useDeleteSchedule } from "@/hooks/use-schedules";
+import { getDefaultDates } from "@/lib/date-utils";
 import type { Schedule } from "@/lib/types";
-import {
-  CalendarDays,
-  Plus,
-  ChevronRight,
-  Trash2,
-  Clock,
-  Users,
-  CalendarPlus,
-} from "lucide-react";
+import { CalendarDays, Plus, CalendarPlus } from "lucide-react";
 import { toast } from "sonner";
-
-function getDefaultDates() {
-  const now = new Date();
-  const day = now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((day + 6) % 7));
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  return {
-    start: monday.toISOString().split("T")[0],
-    end: sunday.toISOString().split("T")[0],
-  };
-}
 
 export default function Home() {
   const router = useRouter();
@@ -46,11 +21,8 @@ export default function Home() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<Schedule | null>(null);
-  const [name, setName] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
 
-  const handleCreate = async () => {
+  const handleCreate = async (name: string, startDate: string, endDate: string) => {
     if (!name || !startDate || !endDate) return;
     if (endDate < startDate) {
       toast.error("End date must be on or after start date");
@@ -59,7 +31,6 @@ export default function Home() {
     try {
       const s = await createMutation.mutateAsync({ name, startDate, endDate });
       setCreateOpen(false);
-      setName("");
       toast.success("Schedule created successfully");
       router.push(`/schedule/${s.id}`);
     } catch (err: unknown) {
@@ -71,9 +42,10 @@ export default function Home() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
     try {
-      await deleteMutation.mutateAsync(id);
+      await deleteMutation.mutateAsync(deleteConfirm.id);
       setDeleteConfirm(null);
       toast.success("Schedule deleted");
     } catch {
@@ -81,25 +53,7 @@ export default function Home() {
     }
   };
 
-  const openCreateDialog = () => {
-    const { start, end } = getDefaultDates();
-    setStartDate(start);
-    setEndDate(end);
-    setName("");
-    setCreateOpen(true);
-  };
-
-  const formatRange = (start: string, end: string) => {
-    const s = new Date(start + "T00:00:00Z");
-    const e = new Date(end + "T00:00:00Z");
-    return `${s.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })} - ${e.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`;
-  };
-
-  const getCompletionPercent = (s: Schedule) => {
-    const total = s.totalShifts ?? 0;
-    if (total === 0) return 0;
-    return Math.round(((s.filledShifts ?? 0) / total) * 100);
-  };
+  const defaults = getDefaultDates();
 
   return (
     <div className="min-h-screen bg-background">
@@ -115,7 +69,7 @@ export default function Home() {
               <p className="text-xs text-muted-foreground hidden sm:block">Workforce Management</p>
             </div>
           </div>
-          <Button onClick={openCreateDialog} size="sm" className="gap-1.5 cursor-pointer">
+          <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5 cursor-pointer">
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">New Schedule</span>
             <span className="sm:hidden">New</span>
@@ -145,200 +99,43 @@ export default function Home() {
             <p className="text-sm text-muted-foreground mt-1 mb-6 max-w-xs mx-auto">
               Create your first weekly schedule to start managing your restaurant staff
             </p>
-            <Button onClick={openCreateDialog} className="gap-2 cursor-pointer">
+            <Button onClick={() => setCreateOpen(true)} className="gap-2 cursor-pointer">
               <Plus className="w-4 h-4" />
               Create Schedule
             </Button>
           </div>
         ) : (
           <>
-            {/* Summary stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
-              <div className="bg-card border rounded-xl p-3 sm:p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <CalendarDays className="w-4 h-4" />
-                  <span className="text-xs font-medium">Schedules</span>
-                </div>
-                <p className="text-2xl font-bold">{schedules.length}</p>
-              </div>
-              <div className="bg-card border rounded-xl p-3 sm:p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Users className="w-4 h-4" />
-                  <span className="text-xs font-medium">Filled Shifts</span>
-                </div>
-                <p className="text-2xl font-bold text-emerald-600">
-                  {schedules.reduce((a, s) => a + (s.filledShifts ?? 0), 0)}
-                </p>
-              </div>
-              <div className="bg-card border rounded-xl p-3 sm:p-4 col-span-2 sm:col-span-1">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Clock className="w-4 h-4" />
-                  <span className="text-xs font-medium">Open Shifts</span>
-                </div>
-                <p className="text-2xl font-bold text-amber-600">
-                  {schedules.reduce((a, s) => a + (s.unfilledShifts ?? 0), 0)}
-                </p>
-              </div>
-            </div>
-
-            {/* Schedule cards */}
+            <SummaryStats schedules={schedules} />
             <div className="grid gap-3">
-              {schedules.map((s) => {
-                const percent = getCompletionPercent(s);
-                const totalShifts = s.totalShifts ?? 0;
-
-                return (
-                  <a
-                    key={s.id}
-                    href={`/schedule/${s.id}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      router.push(`/schedule/${s.id}`);
-                    }}
-                    className="block p-4 sm:p-5 rounded-xl border bg-card hover:border-primary/30 hover:shadow-sm transition-all group cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold text-base truncate">{s.name}</h3>
-                          {!s.hasRequirements && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">
-                              No requirements
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1.5">
-                          <CalendarDays className="w-3.5 h-3.5 shrink-0" />
-                          {formatRange(s.startDate, s.endDate)}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setDeleteConfirm(s);
-                          }}
-                          className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer"
-                          aria-label={`Delete schedule ${s.name}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <ChevronRight className="w-5 h-5 text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-                      </div>
-                    </div>
-
-                    {/* Progress section */}
-                    {totalShifts > 0 && (
-                      <div className="mt-3 pt-3 border-t">
-                        <div className="flex items-center justify-between text-xs mb-1.5">
-                          <div className="flex items-center gap-3 text-muted-foreground">
-                            <span className="flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden="true" />
-                              {s.filledShifts} filled
-                            </span>
-                            {(s.unfilledShifts ?? 0) > 0 && (
-                              <span className="flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full bg-amber-400" aria-hidden="true" />
-                                {s.unfilledShifts} open
-                              </span>
-                            )}
-                          </div>
-                          <span className="font-semibold text-foreground">{percent}%</span>
-                        </div>
-                        <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              percent >= 100
-                                ? "bg-emerald-500"
-                                : percent >= 50
-                                  ? "bg-amber-400"
-                                  : "bg-primary/60"
-                            }`}
-                            style={{ width: `${percent}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {totalShifts === 0 && (
-                      <div className="mt-3 pt-3 border-t">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5" />
-                          No shifts generated yet
-                        </p>
-                      </div>
-                    )}
-                  </a>
-                );
-              })}
+              {schedules.map((s) => (
+                <ScheduleCard
+                  key={s.id}
+                  schedule={s}
+                  onNavigate={(id) => router.push(`/schedule/${id}`)}
+                  onDelete={setDeleteConfirm}
+                />
+              ))}
             </div>
           </>
         )}
       </main>
 
-      {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>New Schedule</DialogTitle>
-            <DialogDescription>Create a new weekly schedule for your restaurant</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="schedule-name" className="text-sm font-medium">Name</Label>
-              <Input
-                id="schedule-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Week of April 14"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="start-date" className="text-sm font-medium">Start date</Label>
-                <Input id="start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="end-date" className="text-sm font-medium">End date</Label>
-                <Input id="end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-              </div>
-            </div>
-            <Button onClick={handleCreate} disabled={createMutation.isPending || !name || !startDate || !endDate} className="w-full cursor-pointer">
-              {createMutation.isPending ? "Creating..." : "Create Schedule"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CreateScheduleDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        defaultStartDate={defaults.start}
+        defaultEndDate={defaults.end}
+        isPending={createMutation.isPending}
+        onCreate={handleCreate}
+      />
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trash2 className="w-5 h-5 text-destructive" />
-              Delete Schedule
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &ldquo;{deleteConfirm?.name}&rdquo;? This will remove all shifts and requirements. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)} disabled={deleteMutation.isPending} className="cursor-pointer">
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteConfirm && handleDelete(deleteConfirm.id)}
-              disabled={deleteMutation.isPending}
-              className="cursor-pointer"
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DeleteScheduleDialog
+        scheduleName={deleteConfirm?.name ?? null}
+        isPending={deleteMutation.isPending}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }

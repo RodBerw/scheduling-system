@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Button } from "@/components/ui/button";
 import { useSendChatMessage } from "@/hooks/use-chat";
-import type { ChatMessage } from "@/lib/types";
-import { Send, Bot, Sparkles } from "lucide-react";
+import type { ChatMessage as ChatMessageType } from "@/lib/types";
+import { Bot, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { ChatMessage } from "@/components/chat-message";
+import { ChatInput } from "@/components/chat-input";
+import { TypingIndicator } from "@/components/typing-indicator";
 
 interface ChatPanelProps {
   scheduleId: number;
@@ -26,7 +26,7 @@ function nextMsgId() {
   return `msg-${++msgIdCounter}`;
 }
 
-interface ChatMessageWithId extends ChatMessage {
+interface ChatMessageWithId extends ChatMessageType {
   id: string;
 }
 
@@ -41,7 +41,6 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
   ]);
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatMutation = useSendChatMessage(scheduleId);
 
   useEffect(() => {
@@ -49,7 +48,7 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
   }, [messages, chatMutation.isPending]);
 
   const focusInput = useCallback(() => {
-    setTimeout(() => inputRef.current?.focus(), 50);
+    setTimeout(() => document.querySelector<HTMLTextAreaElement>('[aria-label="Chat message"]')?.focus(), 50);
   }, []);
 
   const handleSend = async (text?: string) => {
@@ -78,13 +77,6 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
   return (
     <div className="flex flex-col h-full border-l bg-background">
       {/* Header */}
@@ -101,63 +93,9 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" role="log" aria-labelledby="chat-heading">
         {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                msg.role === "user"
-                  ? "bg-primary text-primary-foreground rounded-br-md"
-                  : "bg-muted rounded-bl-md"
-              }`}
-            >
-              {msg.role === "assistant" ? (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                    ul: ({ children }) => <ul className="list-disc ml-4 mb-2 last:mb-0">{children}</ul>,
-                    ol: ({ children }) => <ol className="list-decimal ml-4 mb-2 last:mb-0">{children}</ol>,
-                    li: ({ children }) => <li className="mb-0.5">{children}</li>,
-                    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                    code: ({ children, className }) => {
-                      const isBlock = className?.includes("language-");
-                      return isBlock ? (
-                        <code className="block bg-background/50 rounded-md p-2 my-2 text-xs overflow-x-auto">{children}</code>
-                      ) : (
-                        <code className="bg-background/50 rounded px-1 py-0.5 text-xs">{children}</code>
-                      );
-                    },
-                    pre: ({ children }) => <pre className="mb-2 last:mb-0">{children}</pre>,
-                    table: ({ children }) => (
-                      <div className="overflow-x-auto mb-2 last:mb-0">
-                        <table className="min-w-full text-xs border-collapse">{children}</table>
-                      </div>
-                    ),
-                    th: ({ children }) => <th className="border border-border/50 px-2 py-1 font-semibold text-left bg-background/30">{children}</th>,
-                    td: ({ children }) => <td className="border border-border/50 px-2 py-1">{children}</td>,
-                  }}
-                >
-                  {msg.content}
-                </ReactMarkdown>
-              ) : (
-                <span className="whitespace-pre-wrap">{msg.content}</span>
-              )}
-            </div>
-          </div>
+          <ChatMessage key={msg.id} role={msg.role} content={msg.content} />
         ))}
-        {chatMutation.isPending && (
-          <div className="flex justify-start" role="status" aria-live="polite">
-            <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
-              <div className="flex gap-1.5">
-                <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-              </div>
-            </div>
-          </div>
-        )}
+        {chatMutation.isPending && <TypingIndicator />}
         <div ref={bottomRef} />
       </div>
 
@@ -177,31 +115,12 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
         </div>
       )}
 
-      {/* Input */}
-      <div className="p-3 border-t">
-        <div className="flex items-end gap-2 bg-muted/50 rounded-xl px-3 py-1.5 ring-1 ring-border focus-within:ring-2 focus-within:ring-primary/50 transition-all">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            disabled={chatMutation.isPending}
-            rows={1}
-            aria-label="Chat message"
-            className="flex-1 bg-transparent resize-none text-sm outline-none py-1.5 max-h-20 placeholder:text-muted-foreground/60"
-          />
-          <Button
-            onClick={() => handleSend()}
-            disabled={chatMutation.isPending || !input.trim()}
-            size="sm"
-            className="rounded-lg h-8 w-8 p-0 shrink-0 cursor-pointer"
-            aria-label="Send message"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSend={() => handleSend()}
+        disabled={chatMutation.isPending}
+      />
     </div>
   );
 }
