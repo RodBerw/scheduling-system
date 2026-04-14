@@ -10,7 +10,12 @@ import { Employee } from "../entities/Employee";
 import { Shift } from "../entities/Shift";
 import { Schedule } from "../entities/Schedule";
 import { ScheduleRequirement } from "../entities/ScheduleRequirement";
-import { generateSchedule, fillNewShifts, replaceEmployee, replaceEmployeeBatch } from "./scheduler";
+import {
+  generateSchedule,
+  fillNewShifts,
+  replaceEmployee,
+  replaceEmployeeBatch,
+} from "./scheduler";
 
 /** Lazily initialized OpenAI client singleton */
 let _openai: OpenAI | null = null;
@@ -79,7 +84,9 @@ async function buildContext(scheduleId: number): Promise<string> {
       ? shifts
           .map(
             (s) =>
-              `  [ShiftID:${s.id}] ${s.date} (${DAYS[new Date(s.date + "T00:00:00Z").getUTCDay()]}) ${s.period} — ${s.role}: ${
+              `  [ShiftID:${s.id}] ${s.date} (${
+                DAYS[new Date(s.date + "T00:00:00Z").getUTCDay()]
+              }) ${s.period} — ${s.role}: ${
                 s.assignedEmployee?.name || "UNFILLED"
               }`
           )
@@ -250,7 +257,8 @@ const TOOLS: OpenAI.ChatCompletionTool[] = [
           shiftIds: {
             type: "array",
             items: { type: "number" },
-            description: "Specific shift IDs to delete. If provided, other filters are ignored.",
+            description:
+              "Specific shift IDs to delete. If provided, other filters are ignored.",
           },
           date: {
             type: "string",
@@ -338,6 +346,7 @@ async function executeAction(
         }[];
       };
 
+      // Check if the requirements are valid
       if (!requirements || !Array.isArray(requirements)) {
         return {
           type: action.type,
@@ -350,8 +359,10 @@ async function executeAction(
       const repo = AppDataSource.getRepository(ScheduleRequirement);
       const existing = await repo.find({ where: { scheduleId } });
 
+      // Iterate through the requirements
       const saved: ScheduleRequirement[] = [];
       for (const r of requirements) {
+        // Check if the requirement already exists
         const match = existing.find(
           (e) =>
             e.dayOfWeek === r.dayOfWeek &&
@@ -359,13 +370,16 @@ async function executeAction(
             e.period === r.period
         );
         if (match) {
+          // If the requirement is being removed, remove it
           if (r.requiredCount === 0) {
             await repo.remove(match);
           } else {
+            // If the requirement is being updated, update it
             match.requiredCount = r.requiredCount;
             saved.push(await repo.save(match));
           }
         } else if (r.requiredCount > 0) {
+          // If the requirement is new, create it
           const entity = repo.create({
             ...r,
             scheduleId,
@@ -373,6 +387,7 @@ async function executeAction(
           saved.push(await repo.save(entity));
         }
       }
+      // Return the success message
       return {
         type: action.type,
         success: true,
@@ -381,21 +396,31 @@ async function executeAction(
     }
     case "generate_schedule": {
       try {
+        // Generate the schedule
         const shifts = await generateSchedule(scheduleId);
+
+        // Count the number of filled shifts
         const filled = shifts.filter((s) => s.assignedEmployeeId).length;
+
+        // Count the number of unfilled shifts
         const unfilled = shifts.length - filled;
+
+        // Return the success message
         return {
           type: action.type,
           success: true,
           message: `Generated ${shifts.length} shifts (${filled} filled, ${unfilled} unfilled)`,
         };
       } catch (err: unknown) {
+        // Return the error message
         const msg = err instanceof Error ? err.message : "Generation failed";
         return { type: action.type, success: false, message: msg };
       }
     }
     case "replace_employee": {
       const { shiftId } = action as { shiftId: number; type: string };
+
+      // Check if the shift ID is valid
       if (!shiftId) {
         return {
           type: action.type,
@@ -403,7 +428,11 @@ async function executeAction(
           message: "Missing shiftId",
         };
       }
+
+      // Replace the employee on the shift
       const shift = await replaceEmployee(shiftId);
+
+      // Return the success message
       return {
         type: action.type,
         success: true,
@@ -414,6 +443,8 @@ async function executeAction(
     }
     case "replace_employee_batch": {
       const { shiftIds } = action as { shiftIds: number[]; type: string };
+
+      // Check if the shift IDs are valid
       if (!shiftIds || !Array.isArray(shiftIds) || shiftIds.length === 0) {
         return {
           type: action.type,
@@ -421,9 +452,17 @@ async function executeAction(
           message: "Missing or empty shiftIds array",
         };
       }
+
+      // Replace the employees on the shifts
       const shifts = await replaceEmployeeBatch(shiftIds);
+
+      // Count the number of replaced shifts
       const replaced = shifts.filter((s) => s.assignedEmployee).length;
+
+      // Count the number of unfilled shifts
       const unfilled = shifts.length - replaced;
+
+      // Return the success message
       return {
         type: action.type,
         success: true,
@@ -439,10 +478,13 @@ async function executeAction(
         role?: string;
       };
 
+      // Get the shift repository
       const repo = AppDataSource.getRepository(Shift);
 
       if (shiftIds && shiftIds.length > 0) {
+        // Delete the shifts
         await repo.delete(shiftIds);
+        // Return the success message
         return {
           type: action.type,
           success: true,
@@ -457,14 +499,19 @@ async function executeAction(
       if (role) where.role = role;
 
       if (Object.keys(where).length === 1) {
+        // Return the error message
         return {
           type: action.type,
           success: false,
-          message: "Must provide at least one filter (shiftIds, date, period, or role)",
+          message:
+            "Must provide at least one filter (shiftIds, date, period, or role)",
         };
       }
 
+      // Find the shifts
       const shifts = await repo.find({ where });
+
+      // Check if there are any shifts
       if (shifts.length === 0) {
         return {
           type: action.type,
@@ -473,7 +520,9 @@ async function executeAction(
         };
       }
 
+      // Delete the shifts
       await repo.remove(shifts);
+      // Return the success message
       return {
         type: action.type,
         success: true,
@@ -487,6 +536,7 @@ async function executeAction(
         employeeId: number;
       };
 
+      // Check if the shift ID or employee ID is valid
       if (!shiftId || !employeeId) {
         return {
           type: action.type,
@@ -495,23 +545,36 @@ async function executeAction(
         };
       }
 
+      // Get the shift and employee repositories
       const shiftRepo = AppDataSource.getRepository(Shift);
       const empRepo = AppDataSource.getRepository(Employee);
 
+      // Find the shift
       const shift = await shiftRepo.findOne({ where: { id: shiftId } });
       if (!shift) {
-        return { type: action.type, success: false, message: `Shift ${shiftId} not found` };
+        return {
+          type: action.type,
+          success: false,
+          message: `Shift ${shiftId} not found`,
+        };
       }
 
+      // Find the employee
       const employee = await empRepo.findOne({ where: { id: employeeId } });
       if (!employee) {
-        return { type: action.type, success: false, message: `Employee ${employeeId} not found` };
+        return {
+          type: action.type,
+          success: false,
+          message: `Employee ${employeeId} not found`,
+        };
       }
 
+      // Assign the employee to the shift
       shift.assignedEmployeeId = employeeId;
       shift.assignedEmployee = employee;
       await shiftRepo.save(shift);
 
+      // Return the success message
       return {
         type: action.type,
         success: true,
@@ -521,6 +584,7 @@ async function executeAction(
     case "unassign_employee": {
       const { shiftIds } = action as { type: string; shiftIds: number[] };
 
+      // Check if the shift IDs are valid
       if (!shiftIds || !Array.isArray(shiftIds) || shiftIds.length === 0) {
         return {
           type: action.type,
@@ -529,19 +593,26 @@ async function executeAction(
         };
       }
 
+      // Get the shift repository
       const repo = AppDataSource.getRepository(Shift);
       let unassigned = 0;
 
+      // Iterate through the shift IDs
       for (const id of shiftIds) {
+        // Find the shift
         const shift = await repo.findOne({ where: { id } });
         if (shift && shift.assignedEmployeeId) {
+          // Unassign the employee from the shift
           shift.assignedEmployeeId = null;
           shift.assignedEmployee = null;
           await repo.save(shift);
+
+          // Count the number of unassigned shifts
           unassigned++;
         }
       }
 
+      // Return the success message
       return {
         type: action.type,
         success: true,
@@ -549,6 +620,7 @@ async function executeAction(
       };
     }
     default:
+      // Return the error message
       return {
         type: action.type,
         success: false,
@@ -571,8 +643,10 @@ export async function handleChatMessage(
   reply: string;
   actions: { type: string; success: boolean; message: string }[];
 }> {
+  // Build the context for the AI model
   const context = await buildContext(scheduleId);
 
+  // Create the messages for the AI model
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     {
       role: "system",
@@ -583,17 +657,21 @@ export async function handleChatMessage(
         ({
           role: m.role === "assistant" ? "assistant" : "user",
           content: m.content,
-        }) as OpenAI.ChatCompletionMessageParam
+        } as OpenAI.ChatCompletionMessageParam)
     ),
     { role: "user", content: message },
   ];
 
+  // Initialize the action results
   const actionResults: { type: string; success: boolean; message: string }[] =
     [];
 
   // Tool-call loop: keep calling OpenAI until we get a final text response
+  // This is a loop that will continue until we get a final text response from the AI model
+  // or we have reached the maximum number of rounds
   const MAX_ROUNDS = 5;
   for (let round = 0; round < MAX_ROUNDS; round++) {
+    // Call the OpenAI API to get the completion (this is the main call to the AI model)
     const completion = await getOpenAI().chat.completions.create({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       messages,
@@ -601,6 +679,7 @@ export async function handleChatMessage(
       temperature: 0.3,
     });
 
+    // Get the choice from the completion (models can return multiple choices, we only want the first one)
     const choice = completion.choices[0];
     const assistantMessage = choice.message;
 
@@ -635,13 +714,17 @@ export async function handleChatMessage(
 
     // Execute each tool call and feed results back
     for (const toolCall of assistantMessage.tool_calls) {
+      // Check if the tool call is a function
       if (toolCall.type !== "function") continue;
+
+      // Parse the arguments from the tool call
       const args = JSON.parse(toolCall.function.arguments);
       const action: ParsedAction = {
         type: toolCall.function.name,
         ...args,
       };
 
+      // Execute the action
       const result = await executeAction(action, scheduleId);
       actionResults.push(result);
 
