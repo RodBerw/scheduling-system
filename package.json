@@ -10,7 +10,9 @@
     "dev:web": "npm -w @scheduling/web run dev",
     "dev:api": "npm -w @scheduling/api run dev",
     "seed": "npm -w @scheduling/api run seed",
-    "build": "npm run build --workspaces"
+    "build": "npm run build --workspaces",
+    "test": "npm -w @scheduling/api run test",
+    "test:e2e": "npx playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
