@@ -34,7 +34,9 @@ Built as a response to the [AllieHealth Engineering Challenge](https://github.co
 npm run setup
 ```
 
-This installs dependencies, creates the `.env` file (from `.env.example`), ensures the database directory exists, seeds sample data, and starts both servers. Works on Windows, macOS, and Linux. Edit `apps/api/.env` to add your `OPENAI_API_KEY` for the AI chat feature.
+This installs dependencies, creates the `.env` file (from `.env.example`), ensures the database directory exists, seeds sample data, and starts both servers. Works on Windows, macOS, and Linux. Edit `apps/api/.env` to add your `OPENAI_API_KEY` for the full AI chat experience.
+
+> **No API key?** The app still works! The chat runs in **mock mode** with basic pattern matching — you can generate schedules, set requirements, replace employees, and swap shifts using simple commands. Add your key anytime to unlock full natural-language understanding.
 
 ### Manual Setup
 
@@ -91,8 +93,22 @@ The chat uses OpenAI's native **tool calling** (function calling) API. Instead o
 | `assign_employee` | Manually assign an employee to a shift |
 | `unassign_employee` | Remove an employee from a shift |
 | `delete_shifts` | Clear shifts (by date, period, or all) |
+| `swap_employees` | Exchange two employees between their shifts |
 
 The backend runs a **tool loop**: send messages → receive tool calls → execute → feed results back → repeat until the model produces a final text reply. After each action round, `fillNewShifts()` auto-fills any newly created gaps.
+
+### Mock Mode (no API key)
+
+When no `OPENAI_API_KEY` is configured, the chat falls back to a **mock mode** that uses keyword-based pattern matching instead of an LLM. It supports a subset of commands:
+
+- **Generate/regenerate** — `"Generate the schedule"`, `"Regenerate"`
+- **Set requirements** — `"3 cooks on monday morning"`, `"2 waiters on weekday evening"`
+- **Replace employee** — `"Replace [name]"` (single or batch, depending on how many shifts match)
+- **Swap employees** — `"Swap [name] and [name]"`
+
+Mock mode also **auto-seeds empty schedules**: when you open a blank schedule and send any message, it creates default staffing requirements (realistic weekday/weekend coverage) and generates all shifts automatically — so you can start experimenting immediately.
+
+Both modes share the same **action executor** (`action-executor.ts`), which handles the actual database mutations. This means mock mode produces the same real results (shifts created, employees replaced, etc.) — it just skips the LLM for intent detection.
 
 ### Example Prompts
 
@@ -159,7 +175,8 @@ scheduling-app/
 │   │   ├── src/
 │   │   │   ├── controllers/  # Route handlers
 │   │   │   ├── entities/     # TypeORM models (Employee, Schedule, Shift, ScheduleRequirement)
-│   │   │   ├── services/     # Business logic (scheduler, AI chat)
+│   │   │   ├── services/     # Business logic (scheduler, AI chat, action executor)
+│   │   │   │   └── mock/     # Mock chat fallback (no API key needed)
 │   │   │   └── routes/       # API route definitions
 │   │   └── data/             # SQLite database (gitignored)
 │   │
