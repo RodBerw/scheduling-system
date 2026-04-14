@@ -340,11 +340,13 @@ const TOOLS: OpenAI.ChatCompletionTool[] = [
         properties: {
           shiftIdA: {
             type: "number",
-            description: "The shift ID where employee A is currently assigned (employee A will LEAVE this shift).",
+            description:
+              "The shift ID where employee A is currently assigned (employee A will LEAVE this shift).",
           },
           shiftIdB: {
             type: "number",
-            description: "The shift ID where employee B is currently assigned (employee B will LEAVE this shift).",
+            description:
+              "The shift ID where employee B is currently assigned (employee B will LEAVE this shift).",
           },
         },
       },
