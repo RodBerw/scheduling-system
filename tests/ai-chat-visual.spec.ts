@@ -2,18 +2,18 @@ import { test, expect } from "@playwright/test";
 
 /**
  * Visual test — runs headed so you can watch the AI chat in real time.
- * Tests the full flow on the seeded "This Week" schedule.
+ * Tests the full flow on the seeded "Full Week" schedule.
  */
 
 test.use({ launchOptions: { slowMo: 400 } });
 
 test("Visual AI Chat — full interaction flow", async ({ page }) => {
-  // Go to the seeded "This Week" schedule
+  // Go to the seeded "Full Week" schedule
   await page.goto("/");
   await expect(page.locator("h1")).toContainText("Restaurant Scheduler");
 
-  // Click on "This Week" schedule
-  const scheduleLink = page.locator("a", { hasText: "This Week" });
+  // Click on "Full Week" schedule
+  const scheduleLink = page.locator("a", { hasText: "Full Week" });
   await expect(scheduleLink).toBeVisible({ timeout: 10_000 });
   await scheduleLink.click();
   await page.waitForURL(/\/schedule\/\d+/, { timeout: 10_000 });
