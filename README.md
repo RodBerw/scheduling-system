@@ -15,7 +15,7 @@ Built as a response to the [AllieHealth Engineering Challenge](https://github.co
 
 | Layer | Tech |
 |-------|------|
-| Frontend | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui |
+| Frontend | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, TanStack React Query |
 | Backend | Express 4, TypeORM, SQL.js (SQLite) |
 | AI | OpenAI API (gpt-4o-mini) |
 | Testing | Playwright (E2E) |
@@ -38,7 +38,7 @@ npm install
 cp apps/api/.env.example apps/api/.env
 # Edit apps/api/.env and add your OPENAI_API_KEY
 
-# Seed the database with sample data (22 employees, 2 schedules)
+# Seed the database with sample data (22 employees, 4 schedules)
 npm run seed
 
 # Start the app (API on :3001, Web on :3000)
@@ -74,15 +74,19 @@ When generating a schedule, the system:
 
 ### The AI Chat
 
-The chat assistant understands the full context of your schedule — employees, requirements, and current shifts. You can ask it to:
+The chat uses OpenAI's native **tool calling** (function calling) API. Instead of embedding JSON actions in its text, the model receives a set of tools and decides when to call them:
 
-- Set or update staffing requirements
-- Generate shifts from requirements
-- Replace a specific employee on a shift
-- Bulk-replace an employee across multiple shifts
-- Explain the current schedule state
+| Tool | What it does |
+|------|-------------|
+| `set_requirements` | Set staffing needs for a day/period/role |
+| `generate_schedule` | Fill all shifts from requirements |
+| `replace_employee` | Swap one employee on a single shift |
+| `replace_employee_batch` | Swap an employee across multiple shifts |
+| `assign_employee` | Manually assign an employee to a shift |
+| `unassign_employee` | Remove an employee from a shift |
+| `delete_shifts` | Clear shifts (by date, period, or all) |
 
-The AI responds in natural language and executes actions behind the scenes. No buttons needed.
+The backend runs a **tool loop**: send messages → receive tool calls → execute → feed results back → repeat until the model produces a final text reply. After each action round, `fillNewShifts()` auto-fills any newly created gaps.
 
 ### Example Prompts
 
@@ -120,5 +124,5 @@ scheduling-app/
 
 - **SQL.js over better-sqlite3** — zero native dependencies, no build step issues across platforms
 - **Greedy scheduler with load balancing** — simple, predictable, and good enough for the problem size. Picks the least-worked eligible employee each time
-- **AI action blocks** — the LLM embeds structured JSON actions in its response, which the backend parses and executes. This keeps the AI conversational while still performing real operations
+- **AI tool calling** — uses OpenAI's native function calling API instead of parsing embedded JSON from the LLM's text. The model decides which tools to invoke (`set_requirements`, `generate_schedule`, `replace_employee`, etc.), the backend executes them in a loop, and feeds results back until the model produces a final conversational reply
 - **Monorepo with npm workspaces** — single `npm install`, single `npm run dev`, no extra tooling
