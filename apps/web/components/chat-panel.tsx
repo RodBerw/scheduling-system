@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { sendChatMessage } from "@/services/chatService";
 import type { ChatMessage } from "@/lib/types";
 import { Send, Bot, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -68,6 +69,7 @@ export function ChatPanel({ scheduleId, onScheduleChange }: ChatPanelProps) {
         onScheduleChange();
       }
     } catch {
+      toast.error("AI request failed. Please try again.");
       setMessages((prev) => [
         ...prev,
         { id: nextMsgId(), role: "assistant", content: "Something went wrong. Please try again." },

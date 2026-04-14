@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { getEligibleEmployees, assignEmployee, replaceShift } from "@/services/shiftService";
 import type { Shift, Employee } from "@/lib/types";
 import { RefreshCw, UserMinus, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 
 const PERIOD_LABELS = { morning: "Morning", afternoon: "Afternoon", evening: "Evening" };
 const ROLE_LABELS = { manager: "Manager", cook: "Cook", waiter: "Waiter", dishwasher: "Dishwasher" };
@@ -28,17 +29,15 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
   const [eligible, setEligible] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!shift) return;
     setLoading(true);
-    setError(null);
     getEligibleEmployees(shift.id)
       .then(setEligible)
       .catch(() => {
         setEligible([]);
-        setError("Failed to load eligible employees");
+        toast.error("Failed to load eligible employees");
       })
       .finally(() => setLoading(false));
   }, [shift]);
@@ -46,9 +45,9 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
   const handleAssign = async (employeeId: number) => {
     if (!shift) return;
     setActionLoading(true);
-    setError(null);
     try {
       await assignEmployee(shift.id, employeeId);
+      toast.success("Employee assigned successfully");
       onChanged();
       onClose();
     } catch (err: unknown) {
@@ -56,7 +55,7 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
         err && typeof err === "object" && "response" in err
           ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
           : null;
-      setError(msg || "Failed to assign employee. Please try again.");
+      toast.error(msg || "Failed to assign employee. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -65,9 +64,9 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
   const handleAutoReplace = async () => {
     if (!shift) return;
     setActionLoading(true);
-    setError(null);
     try {
       await replaceShift(shift.id);
+      toast.success("Employee replaced successfully");
       onChanged();
       onClose();
     } catch (err: unknown) {
@@ -75,7 +74,7 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
         err && typeof err === "object" && "response" in err
           ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
           : null;
-      setError(msg || "Failed to find a replacement. Please try again.");
+      toast.error(msg || "Failed to find a replacement. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -84,13 +83,13 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
   const handleUnassign = async () => {
     if (!shift) return;
     setActionLoading(true);
-    setError(null);
     try {
       await assignEmployee(shift.id, null);
+      toast.success("Employee removed from shift");
       onChanged();
       onClose();
     } catch {
-      setError("Failed to unassign employee. Please try again.");
+      toast.error("Failed to unassign employee. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -117,13 +116,6 @@ export function ShiftDialog({ shift, onClose, onChanged }: ShiftDialogProps) {
             {formatDate(shift.date)} &middot; {PERIOD_LABELS[shift.period]}
           </DialogDescription>
         </DialogHeader>
-
-        {/* Error feedback */}
-        {error && (
-          <div className="p-2.5 rounded-lg bg-destructive/10 text-destructive text-sm">
-            {error}
-          </div>
-        )}
 
         {/* Current assignment */}
         <div className="space-y-4">

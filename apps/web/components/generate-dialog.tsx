@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { generateShifts } from "@/services/shiftService";
+import { toast } from "sonner";
 
 interface GenerateDialogProps {
   open: boolean;
@@ -20,26 +21,25 @@ interface GenerateDialogProps {
 
 export function GenerateDialog({ open, onClose, onGenerated, scheduleId }: GenerateDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     setLoading(true);
-    setResult(null);
     try {
       const res = await generateShifts(scheduleId);
       const filled = res.shifts.filter((s: { assignedEmployeeId: number | null }) => s.assignedEmployeeId).length;
       const unfilled = res.shifts.length - filled;
-      setResult(`Created ${res.shifts.length} shifts (${filled} filled, ${unfilled} open)`);
+      toast.success(`Created ${res.shifts.length} shifts (${filled} filled, ${unfilled} open)`);
       onGenerated();
+      onClose();
     } catch {
-      setResult("Failed to generate schedule. Please try again.");
+      toast.error("Failed to generate schedule. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={() => { onClose(); setResult(null); }}>
+    <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Generate Schedule</DialogTitle>
@@ -49,12 +49,6 @@ export function GenerateDialog({ open, onClose, onGenerated, scheduleId }: Gener
         </DialogHeader>
 
         <div className="space-y-4">
-          {result && (
-            <p className={`text-sm rounded-lg p-3 ${result.includes("Failed") ? "bg-destructive/10 text-destructive" : "bg-emerald-50 text-emerald-700"}`}>
-              {result}
-            </p>
-          )}
-
           <Button
             onClick={handleGenerate}
             disabled={loading}

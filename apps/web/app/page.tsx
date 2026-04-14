@@ -23,6 +23,7 @@ import {
   Users,
   CalendarPlus,
 } from "lucide-react";
+import { toast } from "sonner";
 
 function getDefaultDates() {
   const now = new Date();
@@ -48,7 +49,6 @@ export default function Home() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const fetchSchedules = async () => {
@@ -70,22 +70,22 @@ export default function Home() {
   const handleCreate = async () => {
     if (!name || !startDate || !endDate) return;
     if (endDate < startDate) {
-      setCreateError("End date must be on or after start date");
+      toast.error("End date must be on or after start date");
       return;
     }
     setCreating(true);
-    setCreateError(null);
     try {
       const s = await createSchedule(name, startDate, endDate);
       setCreateOpen(false);
       setName("");
+      toast.success("Schedule created successfully");
       router.push(`/schedule/${s.id}`);
     } catch (err: unknown) {
       const msg =
         err && typeof err === "object" && "response" in err
           ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
           : null;
-      setCreateError(msg || "Failed to create schedule. Please try again.");
+      toast.error(msg || "Failed to create schedule. Please try again.");
     } finally {
       setCreating(false);
     }
@@ -96,9 +96,10 @@ export default function Home() {
     try {
       await deleteSchedule(id);
       setDeleteConfirm(null);
+      toast.success("Schedule deleted");
       fetchSchedules();
     } catch {
-      setError("Failed to delete schedule. Please try again.");
+      toast.error("Failed to delete schedule. Please try again.");
     } finally {
       setDeleting(false);
     }
@@ -109,7 +110,6 @@ export default function Home() {
     setStartDate(start);
     setEndDate(end);
     setName("");
-    setCreateError(null);
     setCreateOpen(true);
   };
 
@@ -332,9 +332,6 @@ export default function Home() {
                 <Input id="end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             </div>
-            {createError && (
-              <p className="text-sm text-destructive bg-destructive/10 rounded-lg p-2.5">{createError}</p>
-            )}
             <Button onClick={handleCreate} disabled={creating || !name || !startDate || !endDate} className="w-full cursor-pointer">
               {creating ? "Creating..." : "Create Schedule"}
             </Button>

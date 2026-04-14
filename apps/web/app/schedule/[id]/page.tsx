@@ -18,6 +18,7 @@ import {
   Sparkles,
   RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 
 export default function ScheduleDetail() {
   const params = useParams();
@@ -30,10 +31,8 @@ export default function ScheduleDetail() {
   const [error, setError] = useState<string | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [changedShiftIds, setChangedShiftIds] = useState<Set<number>>(new Set());
-  const [changedReqIds, setChangedReqIds] = useState<Set<number>>(new Set());
 
   const fetchData = useCallback(async (isRefetch = false) => {
     if (isNaN(scheduleId)) return;
@@ -41,12 +40,17 @@ export default function ScheduleDetail() {
       setLoading(true);
       setError(null);
     }
+
     try {
+
+      // Fetch schedule, shifts, and requirements
       const [s, sh, req] = await Promise.all([
         getSchedule(scheduleId),
         getShifts(scheduleId),
         getRequirements(scheduleId),
       ]);
+
+      // If refetching, detect changed shifts and requirements
       if (isRefetch) {
         // Detect changed shifts
         setShifts((prev) => {
@@ -63,11 +67,13 @@ export default function ScheduleDetail() {
             if (!prevMap.has(shift.id)) changed.add(shift.id);
           }
           if (changed.size > 0) {
+            // Update changed shift ids
             setChangedShiftIds(changed);
             setTimeout(() => setChangedShiftIds(new Set()), 2000);
           }
           return sh;
         });
+
         // Detect changed requirements
         setRequirements((prev) => {
           const prevMap = new Map(prev.map((p) => [p.id, p]));
@@ -78,10 +84,7 @@ export default function ScheduleDetail() {
               changed.add(r.id);
             }
           }
-          if (changed.size > 0) {
-            setChangedReqIds(changed);
-            setTimeout(() => setChangedReqIds(new Set()), 2000);
-          }
+
           return req;
         });
         setSchedule(s);
@@ -106,17 +109,21 @@ export default function ScheduleDetail() {
   }, [fetchData]);
 
   const handleGenerate = async () => {
+    if (requirements.length === 0) {
+      toast.error("Set requirements first via the AI chat before generating shifts");
+      return;
+    }
     setGenerating(true);
-    setGenerateError(null);
     try {
       await generateShifts(scheduleId);
       await fetchData(true);
+      toast.success("Shifts generated successfully");
     } catch (err: unknown) {
       const msg =
         err && typeof err === "object" && "response" in err
           ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
           : null;
-      setGenerateError(msg || "Failed to generate shifts. Please try again.");
+      toast.error(msg || "Failed to generate shifts. Please try again.");
     } finally {
       setGenerating(false);
     }
@@ -240,15 +247,6 @@ export default function ScheduleDetail() {
               </Button>
             </div>
           </div>
-          {generateError && (
-            <div className="px-3 sm:px-6 pb-2">
-              <div className="p-2 rounded-lg bg-destructive/10 text-destructive text-xs flex items-center justify-between">
-                <span>{generateError}</span>
-                <button onClick={() => setGenerateError(null)} className="text-destructive hover:underline ml-2 cursor-pointer">Dismiss</button>
-              </div>
-            </div>
-          )}
-
           {/* Mobile stats bar */}
           {shifts.length > 0 && (
             <div className="flex sm:hidden items-center gap-3 px-3 py-1.5 border-t text-xs text-muted-foreground bg-muted/30">

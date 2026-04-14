@@ -2,8 +2,7 @@
  * AI Chat service.
  * Integrates with OpenAI to provide an intelligent scheduling assistant.
  * The assistant can understand natural language requests and execute scheduling actions
- * (set requirements, generate schedules, replace employees) via structured action blocks
- * embedded in the model's response.
+ * (set requirements, generate schedules, replace employees) via OpenAI's native tool calling.
  */
 import OpenAI from "openai";
 import { AppDataSource } from "../data-source";
@@ -11,7 +10,7 @@ import { Employee } from "../entities/Employee";
 import { Shift } from "../entities/Shift";
 import { Schedule } from "../entities/Schedule";
 import { ScheduleRequirement } from "../entities/ScheduleRequirement";
-import { generateSchedule, replaceEmployee, replaceEmployeeBatch } from "./scheduler";
+import { generateSchedule, fillNewShifts, replaceEmployee, replaceEmployeeBatch } from "./scheduler";
 
 /** Lazily initialized OpenAI client singleton */
 let _openai: OpenAI | null = null;
@@ -118,70 +117,205 @@ ${shiftSummary}
 }
 
 /**
- * System prompt that instructs the AI model on its role, available actions,
- * and the JSON action block format it should use to trigger scheduling operations.
+ * System prompt that instructs the AI model on its role and scheduling rules.
+ * Action format instructions are no longer needed — the model uses native tool calling.
  */
 const SYSTEM_PROMPT = `You are a restaurant scheduling assistant. You help managers set up staffing requirements and generate schedules.
 
-You can perform actions by including JSON blocks in your response. When you need to execute an action, include it in this exact format:
-
-\`\`\`action
-{"type": "set_requirements", "requirements": [{"dayOfWeek": 0, "role": "cook", "period": "morning", "requiredCount": 2}, ...]}
-\`\`\`
-
-\`\`\`action
-{"type": "generate_schedule"}
-\`\`\`
-
-\`\`\`action
-{"type": "replace_employee", "shiftId": 123}
-\`\`\`
-
-\`\`\`action
-{"type": "replace_employee_batch", "shiftIds": [123, 124, 125]}
-\`\`\`
+You have tools available to execute scheduling actions. Use them whenever the user requests an operation.
 
 IMPORTANT RULES FOR REQUIREMENTS:
 - dayOfWeek: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
 - roles: "cook", "waiter", "dishwasher", "manager"
 - periods: "morning", "afternoon", "evening"
-- The set_requirements action MERGES with existing requirements — it only adds or updates the entries you specify, leaving all other existing requirements untouched
-- Only include the requirements you want to add or change, NOT all existing ones
+- set_requirements MERGES with existing requirements — only include entries you want to add or change, NOT all existing ones
 - If the user says "weekdays", that means Monday(1) through Friday(5)
 - If the user says "weekends", that means Saturday(6) and Sunday(0)
 - To remove a requirement, set its requiredCount to 0
 
 RULES:
 - generate_schedule requires requirements to be set first. If none exist, set them first.
+- After any action, shifts are automatically filled — you do NOT need to call generate_schedule after setting requirements.
+- Only use generate_schedule when the user explicitly asks to regenerate/recreate the entire schedule from scratch (it deletes all existing shifts).
 - When replacing, find the correct shift ID from the context.
-- If a replacement request matches multiple shifts (e.g. "replace Camila on Friday" and she has both an afternoon and evening shift), use replace_employee_batch with all matching shift IDs in a single action block instead of multiple replace_employee actions.
+- If a replacement request matches multiple shifts (e.g. "replace Camila on Friday" and she has both an afternoon and evening shift), use replace_employee_batch with all matching shift IDs instead of multiple replace_employee calls.
 - Always be helpful and explain what you did.
 - Use the employee names and shift IDs from the CONTEXT.
-- ALWAYS include action blocks when performing operations. Never respond with just information when the user is clearly requesting an action — investigate the context and execute.`;
+- ALWAYS call the appropriate tool when the user is requesting an action. Never respond with just information when an action is needed.`;
+
+/**
+ * OpenAI tool definitions for the scheduling actions.
+ * These provide structured JSON Schema so the model produces validated tool calls.
+ */
+const TOOLS: OpenAI.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "set_requirements",
+      description:
+        "Set or update staffing requirements for the schedule. Merges with existing requirements — only include entries to add or change.",
+      parameters: {
+        type: "object",
+        required: ["requirements"],
+        properties: {
+          requirements: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["dayOfWeek", "role", "period", "requiredCount"],
+              properties: {
+                dayOfWeek: {
+                  type: "number",
+                  description:
+                    "Day of week (0=Sunday, 1=Monday, ..., 6=Saturday)",
+                },
+                role: {
+                  type: "string",
+                  enum: ["cook", "waiter", "dishwasher", "manager"],
+                },
+                period: {
+                  type: "string",
+                  enum: ["morning", "afternoon", "evening"],
+                },
+                requiredCount: {
+                  type: "number",
+                  description:
+                    "Number of employees needed. Set to 0 to remove.",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_schedule",
+      description:
+        "Regenerate ALL shifts from scratch based on requirements. WARNING: deletes all existing shifts first. Only use when user explicitly asks to regenerate the entire schedule.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "replace_employee",
+      description:
+        "Replace the assigned employee on a single shift with the next best available employee.",
+      parameters: {
+        type: "object",
+        required: ["shiftId"],
+        properties: {
+          shiftId: {
+            type: "number",
+            description: "The ID of the shift to reassign.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "replace_employee_batch",
+      description:
+        "Replace employees on multiple shifts at once. Use when a replacement request matches more than one shift.",
+      parameters: {
+        type: "object",
+        required: ["shiftIds"],
+        properties: {
+          shiftIds: {
+            type: "array",
+            items: { type: "number" },
+            description: "Array of shift IDs to reassign.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_shifts",
+      description:
+        "Delete shifts from the schedule. Filter by date, period, role, or provide specific shift IDs. All filters are optional and combined with AND logic.",
+      parameters: {
+        type: "object",
+        properties: {
+          shiftIds: {
+            type: "array",
+            items: { type: "number" },
+            description: "Specific shift IDs to delete. If provided, other filters are ignored.",
+          },
+          date: {
+            type: "string",
+            description: "Delete shifts on this date (YYYY-MM-DD format).",
+          },
+          period: {
+            type: "string",
+            enum: ["morning", "afternoon", "evening"],
+            description: "Delete shifts in this period only.",
+          },
+          role: {
+            type: "string",
+            enum: ["cook", "waiter", "dishwasher", "manager"],
+            description: "Delete shifts for this role only.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "assign_employee",
+      description:
+        "Assign a specific employee to a shift by their IDs. Use this when the user wants a particular person on a particular shift.",
+      parameters: {
+        type: "object",
+        required: ["shiftId", "employeeId"],
+        properties: {
+          shiftId: {
+            type: "number",
+            description: "The ID of the shift to assign.",
+          },
+          employeeId: {
+            type: "number",
+            description: "The ID of the employee to assign.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "unassign_employee",
+      description:
+        "Remove the assigned employee from one or more shifts, leaving them as unfilled. Does not delete the shift.",
+      parameters: {
+        type: "object",
+        required: ["shiftIds"],
+        properties: {
+          shiftIds: {
+            type: "array",
+            items: { type: "number" },
+            description: "The shift IDs to unassign.",
+          },
+        },
+      },
+    },
+  },
+];
 
 interface ParsedAction {
   type: string;
   [key: string]: unknown;
-}
-
-/** Extracts JSON action blocks from the model's raw text response. */
-function parseActions(text: string): ParsedAction[] {
-  const actions: ParsedAction[] = [];
-  const regex = /```action\s*\n([\s\S]*?)```/g;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    try {
-      actions.push(JSON.parse(match[1].trim()));
-    } catch (err) {
-      console.warn("Failed to parse AI action block:", match[1].trim(), err);
-    }
-  }
-  return actions;
-}
-
-/** Removes action blocks from the model's response to produce clean user-facing text. */
-function stripActionBlocks(text: string): string {
-  return text.replace(/```action\s*\n[\s\S]*?```/g, "").trim();
 }
 
 /**
@@ -296,6 +430,124 @@ async function executeAction(
         message: `Processed ${shifts.length} shifts (${replaced} replaced, ${unfilled} unfilled)`,
       };
     }
+    case "delete_shifts": {
+      const { shiftIds, date, period, role } = action as {
+        type: string;
+        shiftIds?: number[];
+        date?: string;
+        period?: string;
+        role?: string;
+      };
+
+      const repo = AppDataSource.getRepository(Shift);
+
+      if (shiftIds && shiftIds.length > 0) {
+        await repo.delete(shiftIds);
+        return {
+          type: action.type,
+          success: true,
+          message: `Deleted ${shiftIds.length} shifts`,
+        };
+      }
+
+      // Build filter from optional params
+      const where: Record<string, unknown> = { scheduleId };
+      if (date) where.date = date;
+      if (period) where.period = period;
+      if (role) where.role = role;
+
+      if (Object.keys(where).length === 1) {
+        return {
+          type: action.type,
+          success: false,
+          message: "Must provide at least one filter (shiftIds, date, period, or role)",
+        };
+      }
+
+      const shifts = await repo.find({ where });
+      if (shifts.length === 0) {
+        return {
+          type: action.type,
+          success: true,
+          message: "No shifts matched the filter",
+        };
+      }
+
+      await repo.remove(shifts);
+      return {
+        type: action.type,
+        success: true,
+        message: `Deleted ${shifts.length} shifts`,
+      };
+    }
+    case "assign_employee": {
+      const { shiftId, employeeId } = action as {
+        type: string;
+        shiftId: number;
+        employeeId: number;
+      };
+
+      if (!shiftId || !employeeId) {
+        return {
+          type: action.type,
+          success: false,
+          message: "Missing shiftId or employeeId",
+        };
+      }
+
+      const shiftRepo = AppDataSource.getRepository(Shift);
+      const empRepo = AppDataSource.getRepository(Employee);
+
+      const shift = await shiftRepo.findOne({ where: { id: shiftId } });
+      if (!shift) {
+        return { type: action.type, success: false, message: `Shift ${shiftId} not found` };
+      }
+
+      const employee = await empRepo.findOne({ where: { id: employeeId } });
+      if (!employee) {
+        return { type: action.type, success: false, message: `Employee ${employeeId} not found` };
+      }
+
+      shift.assignedEmployeeId = employeeId;
+      shift.assignedEmployee = employee;
+      await shiftRepo.save(shift);
+
+      return {
+        type: action.type,
+        success: true,
+        message: `Assigned ${employee.name} to ${shift.date} ${shift.period} (${shift.role})`,
+      };
+    }
+    case "unassign_employee": {
+      const { shiftIds } = action as { type: string; shiftIds: number[] };
+
+      if (!shiftIds || !Array.isArray(shiftIds) || shiftIds.length === 0) {
+        return {
+          type: action.type,
+          success: false,
+          message: "Missing or empty shiftIds array",
+        };
+      }
+
+      const repo = AppDataSource.getRepository(Shift);
+      let unassigned = 0;
+
+      for (const id of shiftIds) {
+        const shift = await repo.findOne({ where: { id } });
+        if (shift && shift.assignedEmployeeId) {
+          shift.assignedEmployeeId = null;
+          shift.assignedEmployee = null;
+          await repo.save(shift);
+          unassigned++;
+        }
+      }
+
+      return {
+        type: action.type,
+        success: true,
+        message: `Unassigned ${unassigned} of ${shiftIds.length} shifts`,
+      };
+    }
     default:
       return {
         type: action.type,
@@ -307,8 +559,9 @@ async function executeAction(
 
 /**
  * Main chat handler. Sends the user message (with conversation history and
- * current scheduling context) to OpenAI, parses any action blocks from
- * the response, executes them, and returns the cleaned reply along with action results.
+ * current scheduling context) to OpenAI using native tool calling.
+ * Runs a loop: if the model returns tool_calls, executes them and feeds
+ * results back until the model produces a final text response.
  */
 export async function handleChatMessage(
   message: string,
@@ -335,34 +588,90 @@ export async function handleChatMessage(
     { role: "user", content: message },
   ];
 
-  const completion = await getOpenAI().chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-    messages,
-    temperature: 0.3,
-  });
-
-  const rawReply =
-    completion.choices[0]?.message?.content ||
-    "Sorry, I couldn't process that.";
-
-  // Parse and execute any action blocks embedded in the model's response
-  const parsedActions = parseActions(rawReply);
   const actionResults: { type: string; success: boolean; message: string }[] =
     [];
 
-  for (const action of parsedActions) {
-    const result = await executeAction(action, scheduleId);
-    actionResults.push(result);
+  // Tool-call loop: keep calling OpenAI until we get a final text response
+  const MAX_ROUNDS = 5;
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const completion = await getOpenAI().chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      messages,
+      tools: TOOLS,
+      temperature: 0.3,
+    });
+
+    const choice = completion.choices[0];
+    const assistantMessage = choice.message;
+
+    // Add the assistant's message to the conversation
+    messages.push(assistantMessage);
+
+    // If no tool calls, we have the final text response
+    if (
+      !assistantMessage.tool_calls ||
+      assistantMessage.tool_calls.length === 0
+    ) {
+      // Auto-fill shifts after any actions were executed
+      if (actionResults.length > 0) {
+        try {
+          const fillResult = await fillNewShifts(scheduleId);
+          if (fillResult.added > 0) {
+            actionResults.push({
+              type: "auto_fill",
+              success: true,
+              message: `Auto-filled ${fillResult.added} shifts (${fillResult.filled} assigned, ${fillResult.unfilled} unfilled)`,
+            });
+          }
+        } catch {
+          // Non-critical — don't fail the response
+        }
+      }
+
+      const reply =
+        assistantMessage.content || "Sorry, I couldn't process that.";
+      return { reply, actions: actionResults };
+    }
+
+    // Execute each tool call and feed results back
+    for (const toolCall of assistantMessage.tool_calls) {
+      if (toolCall.type !== "function") continue;
+      const args = JSON.parse(toolCall.function.arguments);
+      const action: ParsedAction = {
+        type: toolCall.function.name,
+        ...args,
+      };
+
+      const result = await executeAction(action, scheduleId);
+      actionResults.push(result);
+
+      // Add the tool result so the model can see what happened
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result),
+      });
+    }
   }
 
-  // Strip action blocks from the reply and append execution results
-  let reply = stripActionBlocks(rawReply);
+  // Safety: if we exhaust rounds, auto-fill and return what we have
   if (actionResults.length > 0) {
-    const resultText = actionResults
-      .map((r) => (r.success ? `Done: ${r.message}` : `Failed: ${r.message}`))
-      .join("\n");
-    reply = reply ? `${reply}\n\n${resultText}` : resultText;
+    try {
+      const fillResult = await fillNewShifts(scheduleId);
+      if (fillResult.added > 0) {
+        actionResults.push({
+          type: "auto_fill",
+          success: true,
+          message: `Auto-filled ${fillResult.added} shifts (${fillResult.filled} assigned, ${fillResult.unfilled} unfilled)`,
+        });
+      }
+    } catch {
+      // Non-critical
+    }
   }
 
-  return { reply, actions: actionResults };
+  return {
+    reply: "I completed the requested actions.",
+    actions: actionResults,
+  };
 }

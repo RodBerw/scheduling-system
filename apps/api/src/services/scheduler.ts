@@ -212,6 +212,147 @@ export async function generateSchedule(scheduleId: number): Promise<Shift[]> {
 }
 
 /**
+ * Incrementally fills shifts based on requirements WITHOUT deleting existing ones.
+ * Only creates shifts for slots that don't already have enough shifts.
+ * Preserves all manual assignments and existing shifts.
+ */
+export async function fillNewShifts(
+  scheduleId: number
+): Promise<{ added: number; filled: number; unfilled: number; kept: number }> {
+  if (generationLocks.has(scheduleId)) {
+    throw new Error("Schedule generation already in progress for this schedule.");
+  }
+  generationLocks.add(scheduleId);
+
+  try {
+    return await AppDataSource.transaction(async (manager) => {
+      const shiftRepo = manager.getRepository(Shift);
+      const employeeRepo = manager.getRepository(Employee);
+      const requirementRepo = manager.getRepository(ScheduleRequirement);
+      const scheduleRepo = manager.getRepository(Schedule);
+
+      const schedule = await scheduleRepo.findOneOrFail({
+        where: { id: scheduleId },
+      });
+      const { startDate, endDate } = schedule;
+
+      const employees = await employeeRepo.find();
+      const requirements = await requirementRepo.find({ where: { scheduleId } });
+
+      if (requirements.length === 0) {
+        throw new Error(
+          "No requirements defined for this schedule. Please set requirements first."
+        );
+      }
+
+      // Load existing shifts for this schedule
+      const existingShifts = await shiftRepo.find({
+        where: { scheduleId },
+        relations: ["assignedEmployee"],
+      });
+
+      const newShifts: Shift[] = [];
+      let kept = existingShifts.length;
+
+      for (const date of eachDate(startDate, endDate)) {
+        const dayOfWeek = new Date(date + "T00:00:00Z").getUTCDay();
+        const { weekStart, weekEnd } = getWeekBounds(date);
+
+        const existingWeekShifts = await shiftRepo.find({
+          where: { date: Between(weekStart, weekEnd) },
+        });
+        const allShifts = [...existingWeekShifts, ...newShifts];
+
+        for (const period of PERIODS) {
+          const dayRequirements = requirements.filter(
+            (r) => r.dayOfWeek === dayOfWeek && r.period === period
+          );
+
+          for (const requirement of dayRequirements) {
+            // Count how many shifts already exist for this slot
+            const existingForSlot = existingShifts.filter(
+              (s) =>
+                s.date === date &&
+                s.period === period &&
+                s.role === requirement.role
+            );
+
+            // Only create shifts for the gap
+            const needed = requirement.requiredCount - existingForSlot.length;
+            if (needed <= 0) continue;
+
+            // Find eligible employees (same logic as generateSchedule)
+            const eligible = employees
+              .filter((employee) => {
+                if (employee.role !== requirement.role) return false;
+
+                let availability: number[];
+                try {
+                  availability = JSON.parse(employee.availability);
+                } catch {
+                  return false;
+                }
+
+                if (!availability.includes(dayOfWeek)) return false;
+
+                const hours = countAssignedHours(
+                  allShifts,
+                  employee.id,
+                  weekStart,
+                  weekEnd
+                );
+                if (hours + HOURS_PER_SHIFT > employee.maxHoursPerWeek) return false;
+
+                const alreadyAssigned = [...existingShifts, ...newShifts].some(
+                  (s) =>
+                    s.date === date &&
+                    s.period === period &&
+                    s.assignedEmployeeId === employee.id
+                );
+                if (alreadyAssigned) return false;
+                return true;
+              })
+              .sort((a, b) => {
+                const hoursA = countAssignedHours(allShifts, a.id, weekStart, weekEnd);
+                const hoursB = countAssignedHours(allShifts, b.id, weekStart, weekEnd);
+                return hoursA - hoursB;
+              });
+
+            for (let i = 0; i < needed; i++) {
+              const employee = eligible[i] || null;
+              const shift = shiftRepo.create({
+                date,
+                period,
+                role: requirement.role,
+                assignedEmployeeId: employee?.id ?? null,
+                assignedEmployee: employee,
+                scheduleId,
+                explanation: employee
+                  ? `${employee.name} assigned — fewest hours this week among available ${requirement.role}s`
+                  : `Unfilled — no eligible ${requirement.role} available for ${period}`,
+              });
+              newShifts.push(shift);
+            }
+          }
+        }
+      }
+
+      const saved = await shiftRepo.save(newShifts);
+      const filled = saved.filter((s) => s.assignedEmployeeId).length;
+
+      return {
+        added: saved.length,
+        filled,
+        unfilled: saved.length - filled,
+        kept,
+      };
+    });
+  } finally {
+    generationLocks.delete(scheduleId);
+  }
+}
+
+/**
  * Finds a replacement employee for an existing shift.
  * Excludes the currently assigned employee (and any explicitly excluded IDs),
  * then picks the eligible employee with the fewest weekly hours.
