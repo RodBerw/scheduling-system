@@ -28,7 +28,15 @@ Built as a response to the [AllieHealth Engineering Challenge](https://github.co
 - Node.js 18+
 - An [OpenAI API key](https://platform.openai.com/api-keys)
 
-### Setup
+### Quick Start (one command)
+
+```bash
+npm run setup
+```
+
+This installs dependencies, creates the `.env` file (from `.env.example`), ensures the database directory exists, seeds sample data, and starts both servers. Edit `apps/api/.env` to add your `OPENAI_API_KEY` for the AI chat feature.
+
+### Manual Setup
 
 ```bash
 # Install dependencies

@@ -5,10 +5,14 @@
  */
 import "reflect-metadata";
 import { DataSource } from "typeorm";
+import { mkdirSync } from "fs";
 import { Employee } from "./entities/Employee";
 import { Shift } from "./entities/Shift";
 import { ScheduleRequirement } from "./entities/ScheduleRequirement";
 import { Schedule } from "./entities/Schedule";
+
+// Create the data directory if it doesn't exist
+mkdirSync("./data", { recursive: true });
 
 export const AppDataSource = new DataSource({
   type: "sqljs",
