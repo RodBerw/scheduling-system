@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(wc -l /c/Users/Cliente/AreaDiscreta/Coding/Externo/alliehealth-interview/scheduling-app/apps/web/components/*.tsx)"
-    ]
-  }
-}
