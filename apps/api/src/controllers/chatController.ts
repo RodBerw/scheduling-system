@@ -9,11 +9,14 @@ import { handleChatMessage } from "../services/ai-chat";
 /** POST /chat — Send a message to the AI assistant and receive a response with optional actions */
 export async function chat(req: Request, res: Response) {
   const { message, history = [], scheduleId } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: "message is required" });
+  if (typeof message !== "string" || message.trim().length === 0) {
+    return res.status(400).json({ error: "message must be a non-empty string" });
   }
-  if (!scheduleId) {
-    return res.status(400).json({ error: "scheduleId is required" });
+  if (typeof scheduleId !== "number" || !Number.isFinite(scheduleId)) {
+    return res.status(400).json({ error: "scheduleId must be a number" });
+  }
+  if (!Array.isArray(history)) {
+    return res.status(400).json({ error: "history must be an array" });
   }
 
   try {

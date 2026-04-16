@@ -1,11 +1,14 @@
-/**
- * Schedule entity.
- * Represents a named scheduling period defined by a start and end date (e.g., a work week).
- * Serves as the parent for shifts and staffing requirements.
- */
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from "typeorm";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Unique,
+} from "typeorm";
 
 @Entity()
+@Unique("uq_schedule_name", ["name"])
 export class Schedule {
   @PrimaryGeneratedColumn()
   id: number;
@@ -23,4 +26,7 @@ export class Schedule {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

@@ -7,7 +7,7 @@
 import OpenAI from "openai";
 import { AppDataSource } from "../data-source";
 import { Employee } from "../entities/Employee";
-import { Shift } from "../entities/Shift";
+import { Shift, comparePeriods } from "../entities/Shift";
 import { Schedule } from "../entities/Schedule";
 import { ScheduleRequirement } from "../entities/ScheduleRequirement";
 import { fillNewShifts } from "./scheduler";
@@ -53,11 +53,13 @@ async function buildContext(scheduleId: number): Promise<string> {
   const schedule = await AppDataSource.getRepository(Schedule).findOneOrFail({
     where: { id: scheduleId },
   });
-  const shifts = await AppDataSource.getRepository(Shift).find({
-    where: { scheduleId },
-    relations: ["assignedEmployee"],
-    order: { date: "ASC", period: "ASC" },
-  });
+  const shifts = (
+    await AppDataSource.getRepository(Shift).find({
+      where: { scheduleId },
+      relations: ["assignedEmployee"],
+      order: { date: "ASC" },
+    })
+  ).sort((a, b) => a.date.localeCompare(b.date) || comparePeriods(a.period, b.period));
   const requirements = await AppDataSource.getRepository(
     ScheduleRequirement
   ).find({
@@ -409,7 +411,8 @@ export async function handleChatMessage(
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       messages,
       tools: TOOLS,
-      temperature: 0.3,
+      // Deterministic tool calls for destructive actions (assign, delete, swap).
+      temperature: 0,
     });
 
     // Get the choice from the completion (models can return multiple choices, we only want the first one)
@@ -435,8 +438,13 @@ export async function handleChatMessage(
               message: `Auto-filled ${fillResult.added} shifts (${fillResult.filled} assigned, ${fillResult.unfilled} unfilled)`,
             });
           }
-        } catch {
-          // Non-critical — don't fail the response
+        } catch (err) {
+          // Non-critical — don't fail the response, but surface in logs
+          // so silent failures don't mislead the UI.
+          console.error(
+            "Auto-fill after chat actions failed:",
+            err instanceof Error ? { message: err.message, stack: err.stack } : err,
+          );
         }
       }
 
@@ -450,8 +458,30 @@ export async function handleChatMessage(
       // Check if the tool call is a function
       if (toolCall.type !== "function") continue;
 
-      // Parse the arguments from the tool call
-      const args = JSON.parse(toolCall.function.arguments);
+      // Parse the arguments from the tool call. The model can occasionally emit
+      // malformed JSON; swallow the parse error and feed a structured failure
+      // back to the model so it can retry or apologize instead of crashing the
+      // whole request (which would lose any successful actions in this round).
+      let args: Record<string, unknown>;
+      try {
+        args = JSON.parse(toolCall.function.arguments);
+      } catch (parseErr) {
+        const message =
+          parseErr instanceof Error ? parseErr.message : "Invalid JSON";
+        const failure = {
+          type: toolCall.function.name,
+          success: false,
+          message: `Invalid tool arguments from model: ${message}`,
+        };
+        actionResults.push(failure);
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(failure),
+        });
+        continue;
+      }
+
       const action: ParsedAction = {
         type: toolCall.function.name,
         ...args,
@@ -481,13 +511,20 @@ export async function handleChatMessage(
           message: `Auto-filled ${fillResult.added} shifts (${fillResult.filled} assigned, ${fillResult.unfilled} unfilled)`,
         });
       }
-    } catch {
-      // Non-critical
+    } catch (err) {
+      console.error(
+        "Auto-fill after MAX_ROUNDS exhaustion failed:",
+        err instanceof Error ? { message: err.message, stack: err.stack } : err,
+      );
     }
   }
 
+  // We hit the MAX_ROUNDS cap without the model producing a final text reply.
+  // Don't claim success — tell the user the run was truncated so they can
+  // verify the schedule and re-issue whatever didn't land.
   return {
-    reply: "I completed the requested actions.",
+    reply:
+      "I reached the action limit before finishing this request. Some steps may be incomplete — please review the schedule and let me know if anything is missing.",
     actions: actionResults,
   };
 }

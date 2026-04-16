@@ -4,28 +4,34 @@
  * and determining employee eligibility for a given shift.
  */
 import { AppDataSource } from "../data-source";
-import { Shift } from "../entities/Shift";
+import { Shift, comparePeriods } from "../entities/Shift";
 import { Employee } from "../entities/Employee";
 import { Between } from "typeorm";
 
 const HOURS_PER_SHIFT = 4;
 
-/** Safely parses a JSON availability array, returning empty array on failure. */
-function parseAvailability(employee: Employee): number[] {
+/**
+ * Safely parses a JSON availability array. Returns null on failure so callers
+ * can distinguish "no parseable data" from "available on no days". Treating a
+ * corrupt field as empty [] would silently mark the employee unavailable every
+ * day, which is the opposite of the fail-safe intent.
+ */
+function parseAvailability(employee: Employee): number[] | null {
   try {
     return JSON.parse(employee.availability);
   } catch {
     console.warn(`Invalid availability JSON for employee ${employee.id} (${employee.name})`);
-    return [];
+    return null;
   }
 }
 
-/** Retrieves all shifts belonging to a schedule, ordered by date and period. */
+/** Retrieves all shifts belonging to a schedule, ordered by date then period (chronological). */
 export async function getShiftsBySchedule(scheduleId: number) {
-  return AppDataSource.getRepository(Shift).find({
+  const shifts = await AppDataSource.getRepository(Shift).find({
     where: { scheduleId },
-    order: { date: "ASC", period: "ASC" },
+    order: { date: "ASC" },
   });
+  return shifts.sort((a, b) => a.date.localeCompare(b.date) || comparePeriods(a.period, b.period));
 }
 
 /**
@@ -57,7 +63,7 @@ export async function assignEmployee(shiftId: number, employeeId: number | null)
 
   const dayOfWeek = new Date(shift.date + "T00:00:00Z").getUTCDay();
   const availability = parseAvailability(employee);
-  if (!availability.includes(dayOfWeek)) {
+  if (!availability || !availability.includes(dayOfWeek)) {
     throw new Error(`Employee "${employee.name}" is not available on this day`);
   }
 
@@ -116,6 +122,6 @@ export async function getEligibleEmployees(shiftId: number) {
   return employees.filter((emp) => {
     if (emp.role !== shift.role) return false;
     const availability = parseAvailability(emp);
-    return availability.includes(dayOfWeek);
+    return availability !== null && availability.includes(dayOfWeek);
   });
 }

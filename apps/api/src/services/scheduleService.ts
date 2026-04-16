@@ -5,7 +5,7 @@
 import { AppDataSource } from "../data-source";
 import { Schedule } from "../entities/Schedule";
 import { ScheduleRequirement } from "../entities/ScheduleRequirement";
-import { Shift } from "../entities/Shift";
+import { Shift, comparePeriods } from "../entities/Shift";
 
 /**
  * Lists all schedules ordered by creation date (newest first),
@@ -92,12 +92,18 @@ export async function deleteSchedule(id: number) {
   await AppDataSource.getRepository(Schedule).delete(id);
 }
 
-/** Retrieves staffing requirements for a schedule, sorted by day, period, and role. */
+/** Retrieves staffing requirements for a schedule, sorted by day, period (chronological), then role. */
 export async function getRequirements(scheduleId: number) {
-  return AppDataSource.getRepository(ScheduleRequirement).find({
+  const reqs = await AppDataSource.getRepository(ScheduleRequirement).find({
     where: { scheduleId },
-    order: { dayOfWeek: "ASC", period: "ASC", role: "ASC" },
+    order: { dayOfWeek: "ASC", role: "ASC" },
   });
+  return reqs.sort(
+    (a, b) =>
+      a.dayOfWeek - b.dayOfWeek ||
+      comparePeriods(a.period, b.period) ||
+      a.role.localeCompare(b.role),
+  );
 }
 
 /**

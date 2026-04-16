@@ -1,15 +1,19 @@
-/**
- * ScheduleRequirement entity.
- * Defines how many employees of a given role are needed for a specific
- * day-of-week and period within a schedule. Used by the scheduler service
- * to generate the correct number of shifts.
- */
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from "typeorm";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Unique,
+} from "typeorm";
 import { Role } from "./Employee";
 import { Period } from "./Shift";
 import { Schedule } from "./Schedule";
 
 @Entity()
+@Unique("uq_requirement_slot", ["scheduleId", "dayOfWeek", "period", "role"])
 export class ScheduleRequirement {
   @PrimaryGeneratedColumn()
   id: number;
@@ -34,4 +38,10 @@ export class ScheduleRequirement {
 
   @Column("int", { nullable: true })
   scheduleId: number | null;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

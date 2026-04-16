@@ -241,6 +241,8 @@ export async function generateSchedule(scheduleId: number): Promise<Shift[]> {
       await shiftRepo.delete({ scheduleId });
 
       const allShifts: Shift[] = [];
+      // Cache week shifts by weekStart so we query each week at most once per generation
+      const weekShiftsCache = new Map<string, Shift[]>();
 
       // Iterate through each date in the schedule range
       for (const date of eachDate(startDate, endDate)) {
@@ -248,9 +250,13 @@ export async function generateSchedule(scheduleId: number): Promise<Shift[]> {
         const { weekStart, weekEnd } = getWeekBounds(date);
 
         // Include shifts from other schedules in the same week for accurate hour counting
-        const existingWeekShifts = await shiftRepo.find({
-          where: { date: Between(weekStart, weekEnd) },
-        });
+        let existingWeekShifts = weekShiftsCache.get(weekStart);
+        if (!existingWeekShifts) {
+          existingWeekShifts = await shiftRepo.find({
+            where: { date: Between(weekStart, weekEnd) },
+          });
+          weekShiftsCache.set(weekStart, existingWeekShifts);
+        }
         const weekShifts = [...existingWeekShifts, ...allShifts];
 
         // Iterate through each period
@@ -314,17 +320,25 @@ export async function fillNewShifts(
 
       const newShifts: Shift[] = [];
       const kept = existingShifts.length;
+      // Cache week shifts by weekStart so we query each week at most once per fill
+      const weekShiftsCache = new Map<string, Shift[]>();
 
       // Iterate through each date in the schedule range
       for (const date of eachDate(startDate, endDate)) {
         const dayOfWeek = new Date(date + "T00:00:00Z").getUTCDay();
         const { weekStart, weekEnd } = getWeekBounds(date);
 
-        // Get the existing shifts for the week
-        const existingWeekShifts = await shiftRepo.find({
-          where: { date: Between(weekStart, weekEnd) },
-        });
-        // Combine the existing shifts with the new shifts
+        // Get the existing shifts for the week (cached per weekStart)
+        let existingWeekShifts = weekShiftsCache.get(weekStart);
+        if (!existingWeekShifts) {
+          existingWeekShifts = await shiftRepo.find({
+            where: { date: Between(weekStart, weekEnd) },
+          });
+          weekShiftsCache.set(weekStart, existingWeekShifts);
+        }
+        // existingWeekShifts already contains the schedule's own shifts that fall
+        // in this week; combine with newly-created shifts (from other weeks in the
+        // same run) so hour counting is accurate without double-counting.
         const allShifts = [...existingWeekShifts, ...newShifts];
 
         // Iterate through each period
@@ -349,7 +363,7 @@ export async function fillNewShifts(
             if (needed <= 0) continue;
 
             // Find eligible employees (same logic as generateSchedule)
-            const eligible = findEligibleEmployees(employees, [...existingShifts, ...newShifts, ...allShifts], {
+            const eligible = findEligibleEmployees(employees, allShifts, {
               role: requirement.role,
               date,
               period,

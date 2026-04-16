@@ -1,16 +1,37 @@
-/**
- * Shift entity.
- * Represents a single work slot on a specific date, period, and role.
- * May or may not have an assigned employee. The explanation field records
- * the reasoning behind the assignment (or why it was left unfilled).
- */
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from "typeorm";
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Unique,
+} from "typeorm";
 import { Employee, Role } from "./Employee";
 import { Schedule } from "./Schedule";
 
 export type Period = "morning" | "afternoon" | "evening";
 
+/**
+ * Chronological ordering for periods. SQL sort on `period` alone is alphabetical
+ * (afternoon < evening < morning), which misrepresents time-of-day. Callers that
+ * need the natural sequence should sort in memory with this comparator.
+ */
+const PERIOD_ORDER: Record<Period, number> = { morning: 0, afternoon: 1, evening: 2 };
+export function comparePeriods(a: Period, b: Period): number {
+  return PERIOD_ORDER[a] - PERIOD_ORDER[b];
+}
+
 @Entity()
+@Unique("uq_shift_assignment", [
+  "scheduleId",
+  "date",
+  "period",
+  "role",
+  "assignedEmployeeId",
+])
 export class Shift {
   @PrimaryGeneratedColumn()
   id: number;
@@ -43,4 +64,10 @@ export class Shift {
 
   @Column("int", { nullable: true })
   scheduleId: number | null;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

@@ -19,7 +19,12 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors({ origin: "http://localhost:3000" }));
+// CORS_ORIGIN accepts a single origin or a comma-separated list (e.g. for staging + prod).
+const corsOrigin = (process.env.CORS_ORIGIN || "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({ origin: corsOrigin.length === 1 ? corsOrigin[0] : corsOrigin }));
 app.use(express.json({ limit: "1mb" }));
 
 // Health check endpoint
