@@ -48,7 +48,7 @@ npm install
 cp apps/api/.env.example apps/api/.env
 # Edit apps/api/.env and add your OPENAI_API_KEY
 
-# Seed the database with sample data (22 employees, 2 schedules)
+# Seed the database with sample data (36 employees, 3 schedules)
 npm run seed
 
 # Start the app (API on :3001, Web on :3000)
@@ -59,14 +59,17 @@ Then open [http://localhost:3000](http://localhost:3000).
 
 ### Seed Data
 
-The seed script creates a realistic restaurant scenario with **22 employees** across 4 roles (3 managers, 6 cooks, 8 waiters, 5 dishwashers), each with individual availability and weekly hour limits (20-40h).
+The seed script creates a realistic restaurant scenario with **36 employees** across 4 roles (4 managers, 10 cooks, 14 waiters, 8 dishwashers), each with individual availability and weekly hour limits (16-40h). The roster is intentionally diverse — full-timers with broad availability alongside weekend-only staff, weekday-only cooks, part-time students, and mid-week specialists — so the greedy scheduler has meaningful decisions to make and there's real depth for swaps and replacements.
 
-It also creates **2 schedules**:
+It also creates **3 schedules**, each showcasing a different starting point:
 
 | Schedule | Span | State | Purpose |
 |----------|------|-------|---------|
-| **Full Week** | 7 days (Mon–Sun) | Requirements set, shifts generated | Explore an existing schedule — replace employees, tweak requirements, regenerate |
-| **Empty Week** | 7 days (Mon–Sun) | Completely blank | Build a schedule from scratch entirely via AI chat |
+| **Full Week** | 7 days (Mon–Sun), next week | Requirements set, shifts generated (all filled) | Explore an existing schedule — replace employees, tweak requirements, regenerate |
+| **Empty Week** | 7 days (Mon–Sun), 2 weeks out | Completely blank | Build a schedule from scratch entirely via AI chat |
+| **Peak Weekend** | 4 days (Thu–Sun), 3 weeks out | Elevated staffing, ~1 shift unfilled | Stress scenario — use the chat to resolve gaps, swap people, or trim requirements |
+
+The **Peak Weekend** schedule is tuned just past what the roster can fully cover, so the reviewer sees a realistic staffing problem on first open and can solve it via chat (_"who can cover the unfilled Saturday evening shift?"_ / _"reduce Sunday waiter staffing by one"_ / _"swap someone from Thursday"_).
 
 ## How It Works
 
